@@ -74,6 +74,10 @@ type MainWindow() as this =
     let mutable normalBounds: PixelPoint * float * float = (PixelPoint(0, 0), 1280.0, 820.0)
     let mutable wasMaximized = false
 
+    /// The icon beside the clock while the window is minimized to the tray
+    /// (Settings -> Minimize to tray). Made the first time it is needed.
+    let mutable tray: TrayIcon = null
+
     do
         this.InitializeComponent()
 
@@ -184,6 +188,75 @@ type MainWindow() as this =
 
         this.Activated.Add(fun _ -> setMotion true)
         this.Deactivated.Add(fun _ -> setMotion false)
+
+        // Minimize to tray (Settings): minimized, the window hides and an icon
+        // beside the clock stands in for it - a click on it, or Open in its
+        // menu, brings the window back as it was. Quit closes the program the
+        // ordinary way, LIVE FLOW's own shutdown included.
+        let restoreFromTray () =
+            this.Show()
+            this.WindowState <- (if wasMaximized then WindowState.Maximized else WindowState.Normal)
+            this.Activate()
+
+            if not (isNull tray) then
+                tray.IsVisible <- false
+
+        let toTray () =
+            if isNull tray then
+                let icon = new TrayIcon()
+                icon.Icon <- this.Icon
+                icon.ToolTipText <- "DLSS 5 MANAGER"
+                icon.Clicked.Add(fun _ -> restoreFromTray ())
+                let icons = TrayIcons()
+                icons.Add(icon)
+                TrayIcon.SetIcons(Application.Current, icons)
+                tray <- icon
+
+            // Built each time, so the menu speaks the language chosen since.
+            let menu = NativeMenu()
+            let openItem = NativeMenuItem(Localization.current.TrayOpen)
+            openItem.Click.Add(fun _ -> restoreFromTray ())
+            let quitItem = NativeMenuItem(Localization.current.TrayQuit)
+            quitItem.Click.Add(fun _ -> this.Close())
+            menu.Items.Add(openItem)
+            menu.Items.Add(quitItem)
+            tray.Menu <- menu
+            tray.IsVisible <- true
+            this.Hide()
+
+        // The window only leaves the taskbar once there is a tray to hold its
+        // icon (round 30). Started by Windows at sign-in the program can be
+        // running before the taskbar is: hidden then, it had neither a
+        // button nor an icon - running, and nowhere to be found. Until the
+        // taskbar is up it stays minimized, and goes to the tray when it is.
+        let trayWait = DispatcherTimer(Interval = TimeSpan.FromSeconds(2.))
+
+        let toTrayWhenReady () =
+            if this.WindowState = WindowState.Minimized && this.IsVisible then
+                if ScreenDesktop.taskbarReady () then
+                    trayWait.Stop()
+                    toTray ()
+                elif not trayWait.IsEnabled then
+                    trayWait.Start()
+            else
+                trayWait.Stop()
+
+        trayWait.Tick.Add(fun _ ->
+            match this.DataContext with
+            | :? MainViewModel as vm when vm.IsMinimizeToTray -> toTrayWhenReady ()
+            | _ -> trayWait.Stop())
+
+        this.PropertyChanged.Add(fun args ->
+            if args.Property = Window.WindowStateProperty && this.WindowState = WindowState.Minimized then
+                match this.DataContext with
+                | :? MainViewModel as vm when vm.IsMinimizeToTray ->
+                    Dispatcher.UIThread.Post((fun () -> toTrayWhenReady ()), DispatcherPriority.Background)
+                | _ -> ())
+
+        this.Closed.Add(fun _ ->
+            if not (isNull tray) then
+                tray.IsVisible <- false
+                tray.Dispose())
 
         // The resize grips belong to a window that can be sized by hand.
         // Maximised, its edges are the screen's, and a resize cursor there
@@ -1399,6 +1472,12 @@ type MainWindow() as this =
         | :? MainViewModel as vm -> vm.StartScanAsync()
         | _ -> ()
 
+    /// "Free up space" (round 35): picture caches, logs and backups no installed mod needs.
+    member this.OnFreeUpSpaceClicked(_: obj, _: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm -> vm.FreeUpSpace()
+        | _ -> ()
+
     member this.OnClearCacheClicked(sender: obj, e: RoutedEventArgs) =
         match this.DataContext with
         | :? MainViewModel as vm -> vm.ClearCacheAndRescan()
@@ -1983,6 +2062,16 @@ type MainWindow() as this =
         | :? MainViewModel as vm -> vm.RenameReShadeToCustom()
         | _ -> ()
 
+    member this.OnRenameAmdPickClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm -> vm.RenameAmdToPick()
+        | _ -> ()
+
+    member this.OnRenameAmdCustomClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm -> vm.RenameAmdToCustom()
+        | _ -> ()
+
     member this.OnRefreshGlanceClicked(sender: obj, e: RoutedEventArgs) =
         match this.DataContext with
         | :? MainViewModel as vm -> vm.RefreshCommunityGlance()
@@ -1991,6 +2080,150 @@ type MainWindow() as this =
     member this.OnOpenGlanceInCommunityClicked(sender: obj, e: RoutedEventArgs) =
         match this.DataContext with
         | :? MainViewModel as vm -> vm.OpenGlanceInCommunity()
+        | _ -> ()
+
+    // ---- Advanced install sheet ------------------------------------------
+    /// A route button at the top: ticks what that route installs.
+    member this.OnAdvancedPresetClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext, sender with
+        | (:? MainViewModel as vm), (:? Control as c) ->
+            match c.Tag with
+            | :? string as key ->
+                UiSounds.tick ()
+                vm.Advanced.ApplyPreset(key)
+            | _ -> ()
+        | _ -> ()
+
+    member this.OnAdvancedBuildClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext, sender with
+        | (:? MainViewModel as vm), (:? Control as c) ->
+            match c.Tag with
+            | :? string as key ->
+                UiSounds.tick ()
+                vm.Advanced.SetBuild(key)
+            | _ -> ()
+        | _ -> ()
+
+    /// A pick inside a part's row: ReShade's API, RenoDX's build...
+    member this.OnAdvancedOptionClicked(sender: obj, e: RoutedEventArgs) =
+        match sender with
+        | :? Control as c ->
+            match c.DataContext with
+            | :? AdvancedOptionViewModel as option ->
+                UiSounds.tick ()
+                option.Pick()
+            | _ -> ()
+        | _ -> ()
+
+    /// The mode button beside the game's name, in either sheet.
+    member this.OnSwitchSheetClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm ->
+            UiSounds.tick ()
+            vm.SwitchSheet()
+        | _ -> ()
+
+    /// "Add addon" under ReShade, "Add plugin" under OptiScaler: one file of
+    /// the user's own, picked here, copied onto this game only.
+    member this.OnAdvancedAddUserFileClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext, sender with
+        | (:? MainViewModel as vm), (:? Control as c) ->
+            match c.DataContext with
+            | :? AdvancedPartViewModel as part ->
+                let plugin = part.Id = AdvancedInstall.partOptiScaler
+                let extra = part.Id = AdvancedInstall.partExtras
+                let options = FilePickerOpenOptions()
+
+                options.Title <-
+                    if plugin then "Select an OptiScaler plugin"
+                    elif extra then "Select a file for this game"
+                    else "Select a ReShade add-on"
+
+                options.AllowMultiple <- false
+
+                let any = FilePickerFileType("All files (*.*)")
+                any.Patterns <- [| "*.*" |]
+
+                // An extra for this game can be any file at all.
+                options.FileTypeFilter <-
+                    if extra then
+                        [| any |]
+                    elif plugin then
+                        let t = FilePickerFileType("OptiScaler plugin (*.asi, *.dll, *.ini)")
+                        t.Patterns <- [| "*.asi"; "*.dll"; "*.ini" |]
+                        [| t; any |]
+                    else
+                        let t = FilePickerFileType("ReShade add-on (*.addon64, *.addon32, *.addon)")
+                        t.Patterns <- [| "*.addon64"; "*.addon32"; "*.addon" |]
+                        [| t; any |]
+
+                async {
+                    let! files = this.StorageProvider.OpenFilePickerAsync(options) |> Async.AwaitTask
+
+                    if files <> null && files.Count > 0 then
+                        vm.Advanced.AddUserFile(part.Id, files.[0].Path.LocalPath)
+                }
+                |> Async.StartImmediate
+            | _ -> ()
+        | _ -> ()
+
+    /// "Add folder" under the dynamic extra files: a folder of the user's own,
+    /// copied whole beside this game only.
+    member this.OnAdvancedAddUserFolderClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm ->
+            let options = FolderPickerOpenOptions()
+            options.Title <- "Select a folder for this game"
+            options.AllowMultiple <- false
+
+            async {
+                let! folders = this.StorageProvider.OpenFolderPickerAsync(options) |> Async.AwaitTask
+
+                if folders <> null && folders.Count > 0 then
+                    vm.Advanced.AddUserFolder(folders.[0].Path.LocalPath)
+            }
+            |> Async.StartImmediate
+        | _ -> ()
+
+    /// The x on one of the user's own files.
+    member this.OnAdvancedRemoveUserFileClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext, sender with
+        | (:? MainViewModel as vm), (:? Control as c) ->
+            match c.DataContext with
+            | :? AdvancedUserFileViewModel as file ->
+                UiSounds.tick ()
+                vm.Advanced.RemoveUserFile(file.Path)
+            | _ -> ()
+        | _ -> ()
+
+    member this.OnAdvancedApplyClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm -> vm.Advanced.Apply()
+        | _ -> ()
+
+    member this.OnAdvancedRemoveAllClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm -> vm.Advanced.RemoveAll()
+        | _ -> ()
+
+    member this.OnAdvancedToggleResultClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm -> vm.Advanced.ToggleResult()
+        | _ -> ()
+
+    /// The DLL NAME card of the advanced sheet: the same card, its own place.
+    member this.OnToggleAdvDllNamesClicked(sender: obj, e: RoutedEventArgs) =
+        match this.DataContext with
+        | :? MainViewModel as vm ->
+            vm.ToggleDllNames()
+
+            if vm.IsDllNamesOpen then
+                Dispatcher.UIThread.Post(
+                    (fun () ->
+                        match this.FindControl<Border>("AdvDllNameCard") with
+                        | null -> ()
+                        | card -> card.BringIntoView()),
+                    DispatcherPriority.Background)
         | _ -> ()
 
     member this.OnManageCloseClicked(sender: obj, e: RoutedEventArgs) =

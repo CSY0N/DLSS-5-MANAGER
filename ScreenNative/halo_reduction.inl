@@ -1,4 +1,11 @@
-// Halo reduction - the LIVE FLOW slider of that name.
+// Halo reduction - half of the LIVE FLOW slider now called Denoiser. The other
+// half is the noise cleaner in denoise.inl, driven by the same number.
+//
+// Round 22: at the strength the slider used to give it, this took too much -
+// the network's local contrast along every edge went with the rim, and the
+// picture read flatter than the network's own. It now runs at half of the
+// slider (kHaloShare), and the extra it takes along a moving border grows with
+// the slider instead of jumping to 60% at any setting above zero.
 //
 // What it removes. Measured on real content (tests/screen_bench.py, a football
 // broadcast frame): along a strong edge the network lifts the bright side by
@@ -22,7 +29,7 @@
 //          two-pixel structure the network adds - is under the box and
 //          stays.
 //
-// The composite then brings Dc up to the screen edge-aware (kResidualHlsl).
+// The composite then brings Dc up to the screen edge-aware (kDetailHlsl).
 // H is the slider, 0..1. At 0 none of this runs and the picture is exactly
 // what it was before the slider existed.
 //
@@ -35,7 +42,11 @@
 
 static constexpr uint32_t RESIZE_FLAG_HALO = 0x4u;   // bits 8..15 carry the amount, 0..255
 
-// The amount the client last asked for, 0..1. NS_HALO decides the first
+// How much of the slider goes to the rim removal. Applied once, where the
+// pipeline reads the slider (lf_pipeline.inl).
+static constexpr float kHaloShare = 0.5f;
+
+// The amount the client last asked for, 0..1. LF_HALO decides the first
 // frame (the worker starts before any RNSZ); every RNSZ carrying
 // RESIZE_FLAG_HALO overwrites it.
 static float g_halo = -1.0f;
@@ -45,10 +56,10 @@ static float CurrentHalo()
     if (g_halo < 0.0f)
     {
         char buf[16] = {};
-        const DWORD got = GetEnvironmentVariableA("NS_HALO", buf, sizeof(buf));
+        const DWORD got = GetEnvironmentVariableA("LF_HALO", buf, sizeof(buf));
         float f = (got > 0 && got < sizeof(buf)) ? static_cast<float>(atof(buf)) : 0.0f;
         g_halo = (f > 0.0f) ? (f < 1.0f ? f : 1.0f) : 0.0f;
-        if (g_halo > 0.0f) Log("[halo] reduction %.2f from NS_HALO", g_halo);
+        if (g_halo > 0.0f) Trace("[halo] reduction %.2f from LF_HALO", g_halo);
     }
     return g_halo;
 }
@@ -58,7 +69,7 @@ static void HaloFromResizeFlags(uint32_t flags)
     if ((flags & RESIZE_FLAG_HALO) == 0) return;
     const float amount = static_cast<float>((flags >> 8) & 0xFFu) / 255.0f;
     if (g_halo < 0.0f || amount != g_halo)
-        Log("[halo] reduction %.2f", amount);
+        Trace("[halo] reduction %.2f", amount);
     g_halo = amount;
 }
 
@@ -100,8 +111,8 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
 // Dc = D - H * box3(D - Tbil). t0 nr_in, t1 nr_out, t2 Tbil, t3 motion.
 //
-// H rises towards full strength at a moving object's border. That is where the
-// network's rim is at its worst: it carries its history, and along a border
+// H rises at a moving object's border, up to twice its share of the slider
+// (never by a fixed jump). That is where the network's rim is at its worst: it carries its history, and along a border
 // that moves the history lags behind the object, so the lift trails it as a
 // ghost outline - the halo around a running player. The motion field says
 // where those borders are: two vectors a few pixels apart that disagree. On
@@ -156,7 +167,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
         // In the network's own pixels: under one pixel of disagreement is
         // noise in the field, four and more is a border.
         float border = saturate((spread / max(toMv.x, 1e-4f) - 0.75f) / 3.25f);
-        gain = gHalo + (1.0f - gHalo) * 0.6f * border;
+        gain = min(1.0f, gHalo * (1.0f + border));
     }
     gDst[p] = float4(d - gain * (e / 9.0f), 0.0f);
 }
@@ -195,8 +206,8 @@ static void CloseHaloTargets()
     for (auto &set : g_halo_bound)
         for (auto &slot : set) slot = nullptr;
     // The residual set may point at the released delta.
-    g_res_delta_bound = nullptr;
-    g_res_native_bound = nullptr;
+    lfScaler.detail_delta = nullptr;
+    lfScaler.detail_native = nullptr;
 }
 
 static bool EnsureHaloPipeline()
@@ -206,18 +217,18 @@ static bool EnsureHaloPipeline()
     g_halo_pipeline_failed = true;   // until everything below has worked
 
     HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
-    auto compile = compiler ? reinterpret_cast<PFN_D3DCompile_>(GetProcAddress(compiler, "D3DCompile")) : nullptr;
+    auto compile = compiler ? static_cast<CompileFn>(&CachedCompile) : nullptr;
     HMODULE d3d12 = GetModuleHandleW(L"d3d12.dll");
-    auto serialize = d3d12 ? reinterpret_cast<PFN_D3D12SerializeRootSignature_>(
+    auto serialize = d3d12 ? reinterpret_cast<SerializeRootFn>(
                                  GetProcAddress(d3d12, "D3D12SerializeRootSignature")) : nullptr;
-    if (compile == nullptr || serialize == nullptr) { Log("[halo] compiler unavailable"); return false; }
+    if (compile == nullptr || serialize == nullptr) { Trace("[halo] compiler unavailable"); return false; }
 
     ID3DBlob *blur = nullptr, *fix = nullptr, *errors = nullptr;
     HRESULT hr = compile(kHaloBlurHlsl, sizeof(kHaloBlurHlsl) - 1, "halo_blur.hlsl", nullptr, nullptr,
                          "CSMain", "cs_5_0", 0, 0, &blur, &errors);
     if (FAILED(hr) || blur == nullptr)
     {
-        Log("[halo] blur shader failed 0x%08X: %s", hr,
+        Trace("[halo] blur shader failed 0x%08X: %s", hr,
             errors ? static_cast<const char *>(errors->GetBufferPointer()) : "(no log)");
         if (errors) errors->Release();
         return false;
@@ -227,7 +238,7 @@ static bool EnsureHaloPipeline()
                  "CSMain", "cs_5_0", 0, 0, &fix, &errors);
     if (FAILED(hr) || fix == nullptr)
     {
-        Log("[halo] fix shader failed 0x%08X: %s", hr,
+        Trace("[halo] fix shader failed 0x%08X: %s", hr,
             errors ? static_cast<const char *>(errors->GetBufferPointer()) : "(no log)");
         if (errors) errors->Release();
         blur->Release();
@@ -257,34 +268,34 @@ static bool EnsureHaloPipeline()
     ID3DBlob *rs_blob = nullptr;
     hr = serialize(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &rs_blob, &errors);
     if (errors) errors->Release();
-    if (FAILED(hr) || rs_blob == nullptr) { Log("[halo] root signature failed 0x%08X", hr); blur->Release(); fix->Release(); return false; }
-    hr = h.dev->CreateRootSignature(0, rs_blob->GetBufferPointer(), rs_blob->GetBufferSize(),
+    if (FAILED(hr) || rs_blob == nullptr) { Trace("[halo] root signature failed 0x%08X", hr); blur->Release(); fix->Release(); return false; }
+    hr = lfCore.device->CreateRootSignature(0, rs_blob->GetBufferPointer(), rs_blob->GetBufferSize(),
                                     __uuidof(ID3D12RootSignature), reinterpret_cast<void **>(&g_halo_rs));
     rs_blob->Release();
-    if (FAILED(hr)) { Log("[halo] CreateRootSignature failed 0x%08X", hr); blur->Release(); fix->Release(); return false; }
+    if (FAILED(hr)) { Trace("[halo] CreateRootSignature failed 0x%08X", hr); blur->Release(); fix->Release(); return false; }
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC pd = {};
     pd.pRootSignature = g_halo_rs;
     pd.CS.pShaderBytecode = blur->GetBufferPointer();
     pd.CS.BytecodeLength = blur->GetBufferSize();
-    hr = h.dev->CreateComputePipelineState(&pd, __uuidof(ID3D12PipelineState), reinterpret_cast<void **>(&g_halo_blur_pso));
+    hr = lfCore.device->CreateComputePipelineState(&pd, __uuidof(ID3D12PipelineState), reinterpret_cast<void **>(&g_halo_blur_pso));
     blur->Release();
-    if (FAILED(hr)) { Log("[halo] blur pipeline failed 0x%08X", hr); fix->Release(); return false; }
+    if (FAILED(hr)) { Trace("[halo] blur pipeline failed 0x%08X", hr); fix->Release(); return false; }
     pd.CS.pShaderBytecode = fix->GetBufferPointer();
     pd.CS.BytecodeLength = fix->GetBufferSize();
-    hr = h.dev->CreateComputePipelineState(&pd, __uuidof(ID3D12PipelineState), reinterpret_cast<void **>(&g_halo_fix_pso));
+    hr = lfCore.device->CreateComputePipelineState(&pd, __uuidof(ID3D12PipelineState), reinterpret_cast<void **>(&g_halo_fix_pso));
     fix->Release();
-    if (FAILED(hr)) { Log("[halo] fix pipeline failed 0x%08X", hr); return false; }
+    if (FAILED(hr)) { Trace("[halo] fix pipeline failed 0x%08X", hr); return false; }
 
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     hd.NumDescriptors = 15;
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    hr = h.dev->CreateDescriptorHeap(&hd, __uuidof(ID3D12DescriptorHeap), reinterpret_cast<void **>(&g_halo_heap));
-    if (FAILED(hr)) { Log("[halo] descriptor heap failed 0x%08X", hr); return false; }
+    hr = lfCore.device->CreateDescriptorHeap(&hd, __uuidof(ID3D12DescriptorHeap), reinterpret_cast<void **>(&g_halo_heap));
+    if (FAILED(hr)) { Trace("[halo] descriptor heap failed 0x%08X", hr); return false; }
 
     g_halo_pipeline_failed = false;
-    Log("[halo] pipeline ready (cross-bilateral r=%d step=%d, sigma_r=%.2f, motion-aware borders)", kHaloRadius, kHaloStep, kHaloSigmaR);
+    Trace("[halo] pipeline ready (cross-bilateral r=%d step=%d, sigma_r=%.2f, motion-aware borders)", kHaloRadius, kHaloStep, kHaloSigmaR);
     return true;
 }
 
@@ -299,7 +310,7 @@ static ID3D12Resource *MakeHaloTexture(UINT w, UINT hgt, DXGI_FORMAT format)
     td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     td.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     ID3D12Resource *r = nullptr;
-    if (FAILED(h.dev->CreateCommittedResource(&def, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+    if (FAILED(lfCore.device->CreateCommittedResource(&def, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                               nullptr, __uuidof(ID3D12Resource), reinterpret_cast<void **>(&r))))
         return nullptr;
     return r;
@@ -307,7 +318,7 @@ static ID3D12Resource *MakeHaloTexture(UINT w, UINT hgt, DXGI_FORMAT format)
 
 // The three float targets at w x hgt, plus - for a full-resolution network -
 // the RGBA8 texture it writes instead of the output. Sizes only change with
-// an RNSZ, and ReleaseVideoTextures closes these on every one of those after
+// an RNSZ, and PipelineRelease closes these on every one of those after
 // the GPU has drained, so nothing here is freed while in flight.
 static bool EnsureHaloTargets(UINT w, UINT hgt, bool need_raw)
 {
@@ -325,19 +336,19 @@ static bool EnsureHaloTargets(UINT w, UINT hgt, bool need_raw)
         g_halo_t.dc = MakeHaloTexture(w, hgt, DXGI_FORMAT_R16G16B16A16_FLOAT);
         if (g_halo_t.th == nullptr || g_halo_t.tb == nullptr || g_halo_t.dc == nullptr)
         {
-            Log("[halo] %ux%u targets failed - reduction off", w, hgt);
+            Trace("[halo] %ux%u targets failed - reduction off", w, hgt);
             CloseHaloTargets();
             return false;
         }
         g_halo_t.w = w;
         g_halo_t.hgt = hgt;
-        Log("[halo] targets ready at %ux%u", w, hgt);
+        Trace("[halo] targets ready at %ux%u", w, hgt);
     }
     if (need_raw && (g_halo_t.raw == nullptr || g_halo_t.raw_w != w || g_halo_t.raw_h != hgt))
     {
         if (g_halo_t.raw != nullptr) { g_halo_t.raw->Release(); g_halo_t.raw = nullptr; }
         g_halo_t.raw = MakeHaloTexture(w, hgt, DXGI_FORMAT_R8G8B8A8_UNORM);
-        if (g_halo_t.raw == nullptr) { Log("[halo] %ux%u network target failed", w, hgt); return false; }
+        if (g_halo_t.raw == nullptr) { Trace("[halo] %ux%u network target failed", w, hgt); return false; }
         g_halo_t.raw_w = w;
         g_halo_t.raw_h = hgt;
     }
@@ -349,7 +360,7 @@ static void BindHaloSet(UINT slot, ID3D12Resource *t0, ID3D12Resource *t1, ID3D1
 {
     ID3D12Resource *want[5] = { t0, t1, t2, mv, u0 };
     if (memcmp(g_halo_bound[slot], want, sizeof(want)) == 0) return;
-    const UINT stride = h.dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    const UINT stride = lfCore.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     D3D12_CPU_DESCRIPTOR_HANDLE cpu = g_halo_heap->GetCPUDescriptorHandleForHeapStart();
     cpu.ptr += static_cast<SIZE_T>(slot) * 5 * stride;
     for (int i = 0; i < 4; ++i)
@@ -361,13 +372,13 @@ static void BindHaloSet(UINT slot, ID3D12Resource *t0, ID3D12Resource *t1, ID3D1
         sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         sd.Texture2D.MipLevels = 1;
-        h.dev->CreateShaderResourceView(want[i], &sd, cpu);
+        lfCore.device->CreateShaderResourceView(want[i], &sd, cpu);
         cpu.ptr += stride;
     }
     D3D12_UNORDERED_ACCESS_VIEW_DESC ud = {};
     ud.Format = u0->GetDesc().Format;
     ud.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    h.dev->CreateUnorderedAccessView(u0, nullptr, &ud, cpu);
+    lfCore.device->CreateUnorderedAccessView(u0, nullptr, &ud, cpu);
     memcpy(g_halo_bound[slot], want, sizeof(want));
 }
 
@@ -376,20 +387,20 @@ static UINT g_halo_mv_w, g_halo_mv_h;   // the motion bound for this frame's pas
 static void HaloDispatch(ID3D12PipelineState *pso, UINT slot, UINT w, UINT hgt,
                          int dx, int dy, uint32_t mode, float param)
 {
-    const UINT stride = h.dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    const UINT stride = lfCore.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     ID3D12DescriptorHeap *heaps[] = { g_halo_heap };
-    h.list->SetDescriptorHeaps(1, heaps);
-    h.list->SetComputeRootSignature(g_halo_rs);
-    h.list->SetPipelineState(pso);
+    lfCore.cmd->SetDescriptorHeaps(1, heaps);
+    lfCore.cmd->SetComputeRootSignature(g_halo_rs);
+    lfCore.cmd->SetPipelineState(pso);
     UINT32 c[10] = { w, hgt, static_cast<UINT32>(dx), static_cast<UINT32>(dy),
                      static_cast<UINT32>(kHaloRadius), static_cast<UINT32>(kHaloStep), mode, 0,
                      g_halo_mv_w, g_halo_mv_h };
     memcpy(&c[7], &param, sizeof(float));
-    h.list->SetComputeRoot32BitConstants(0, 10, c, 0);
+    lfCore.cmd->SetComputeRoot32BitConstants(0, 10, c, 0);
     D3D12_GPU_DESCRIPTOR_HANDLE gpu = g_halo_heap->GetGPUDescriptorHandleForHeapStart();
     gpu.ptr += static_cast<UINT64>(slot) * 5 * stride;
-    h.list->SetComputeRootDescriptorTable(1, gpu);
-    h.list->Dispatch((w + 7) / 8, (hgt + 7) / 8, 1);
+    lfCore.cmd->SetComputeRootDescriptorTable(1, gpu);
+    lfCore.cmd->Dispatch((w + 7) / 8, (hgt + 7) / 8, 1);
 }
 
 // Records the three passes into the open list. nr_in and nr_out must be
@@ -403,29 +414,29 @@ static void HaloFilter(ID3D12Resource *nr_in, ID3D12Resource *nr_out, UINT w, UI
     g_halo_mv_h = mv != nullptr ? mv_h : 0u;
     BindHaloSet(0, nr_in, nr_out, nr_in, mv, g_halo_t.th);
     HaloDispatch(g_halo_blur_pso, 0, w, hgt, 1, 0, 0u, kHaloSigmaR);
-    D3D12_RESOURCE_BARRIER b1 = Transition(g_halo_t.th, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+    D3D12_RESOURCE_BARRIER b1 = Barrier(g_halo_t.th, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    h.list->ResourceBarrier(1, &b1);
+    lfCore.cmd->ResourceBarrier(1, &b1);
 
     BindHaloSet(1, nr_in, g_halo_t.th, nr_in, mv, g_halo_t.tb);
     HaloDispatch(g_halo_blur_pso, 1, w, hgt, 0, 1, 1u, kHaloSigmaR);
-    D3D12_RESOURCE_BARRIER b2 = Transition(g_halo_t.tb, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+    D3D12_RESOURCE_BARRIER b2 = Barrier(g_halo_t.tb, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    h.list->ResourceBarrier(1, &b2);
+    lfCore.cmd->ResourceBarrier(1, &b2);
 
     BindHaloSet(2, nr_in, nr_out, g_halo_t.tb, mv, g_halo_t.dc);
     HaloDispatch(g_halo_fix_pso, 2, w, hgt, 0, 0, 2u, halo);
     D3D12_RESOURCE_BARRIER b3[] = {
-        Transition(g_halo_t.dc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-        Transition(g_halo_t.th, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
-        Transition(g_halo_t.tb, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        Barrier(g_halo_t.dc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+        Barrier(g_halo_t.th, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        Barrier(g_halo_t.tb, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
     };
-    h.list->ResourceBarrier(_countof(b3), b3);
+    lfCore.cmd->ResourceBarrier(_countof(b3), b3);
 }
 
 static void HaloDone()
 {
-    D3D12_RESOURCE_BARRIER back = Transition(g_halo_t.dc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+    D3D12_RESOURCE_BARRIER back = Barrier(g_halo_t.dc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
                                              D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    h.list->ResourceBarrier(1, &back);
+    lfCore.cmd->ResourceBarrier(1, &back);
 }

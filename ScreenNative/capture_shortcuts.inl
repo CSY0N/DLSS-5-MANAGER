@@ -14,32 +14,32 @@ static void EndSnapshot()
     CaptureGuard guard;
     if (!g_snapshot_frozen) return;
     // Restore exclusion and wait for composition BEFORE allowing capture again.
-    SetWindowDisplayAffinity(g_present_hwnd, g_wgc_active || g_present_capturable ? 0 : WDA_EXCLUDEFROMCAPTURE);
+    SetWindowDisplayAffinity(lfShow.hwnd, !lfCap.window_dxgi && (lfCap.window_live || lfShow.capturable) ? 0 : WDA_EXCLUDEFROMCAPTURE);
     DwmFlush();
-    g_force_next_frame = true;
+    lfOut.force_next = true;
     InterlockedExchange(&g_snapshot_frozen, 0);
-    KillTimer(g_present_hwnd, kSnapshotTimer);
-    Log("[snapshot] desktop capture resumed");
+    KillTimer(lfShow.hwnd, kSnapshotTimer);
+    Trace("[snapshot] desktop capture resumed");
 }
 
 static void BeginSnapshot(UINT duration)
 {
-    if (!g_present_hwnd || g_wgc_active || !IsWindowVisible(g_present_hwnd)) return;
+    if (!lfShow.hwnd || (lfCap.window_live && !lfCap.window_dxgi) || !IsWindowVisible(lfShow.hwnd)) return;
     CaptureGuard guard;
     InterlockedExchange(&g_snapshot_frozen, 1);
-    if (!SetWindowDisplayAffinity(g_present_hwnd, 0)) {
+    if (!SetWindowDisplayAffinity(lfShow.hwnd, 0)) {
         InterlockedExchange(&g_snapshot_frozen, 0);
-        Log("[snapshot] capture affinity failed %lu", GetLastError());
+        Trace("[snapshot] capture affinity failed %lu", GetLastError());
         return;
     }
     DwmFlush();
-    if (!SetTimer(g_present_hwnd, kSnapshotTimer, duration, nullptr)) {
-        SetWindowDisplayAffinity(g_present_hwnd, WDA_EXCLUDEFROMCAPTURE);
+    if (!SetTimer(lfShow.hwnd, kSnapshotTimer, duration, nullptr)) {
+        SetWindowDisplayAffinity(lfShow.hwnd, WDA_EXCLUDEFROMCAPTURE);
         DwmFlush();
         InterlockedExchange(&g_snapshot_frozen, 0);
         return;
     }
-    Log("[snapshot] processed frame available for %u ms", duration);
+    Trace("[snapshot] processed frame available for %u ms", duration);
 }
 
 static LRESULT CALLBACK SnapshotKeys(int code, WPARAM message, LPARAM data)

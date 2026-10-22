@@ -251,6 +251,11 @@ type MainViewModel() as this =
 
     /// Emulators are a hand-curated list, kept apart from the scanned library.
     let allEmulators = ObservableCollection<GameCardViewModel>()
+    // The space the app uses on this PC, and what "Free up space" would free (round 35, StorageCleaner).
+    let mutable storageUsed = -1L
+    let mutable storageFreeable = -1L
+    let mutable storageFreeing = false
+    let mutable storageNote = ""
     let filteredEmulators = ObservableCollection<GameCardViewModel>()
 
     /// "games" | "emulators" | "settings" - the page on screen.
@@ -372,9 +377,15 @@ type MainViewModel() as this =
 
     /// The two RenoDX options on the 64-bit DX12 / DX11 / DX9 routes: the MFG
     /// unlock add-on beside RenoDX, and the Multipass build of RenoDX in place
-    /// of the ordinary one. Both off unless the user asks.
+    /// of the ordinary one. The unlock is off unless the user asks; Multipass
+    /// is the better build now (round 26) and arrives on - see
+    /// ApplyMultipassDefault.
     let mutable useMfgUnlock = false
     let mutable useMultipass = false
+
+    /// The user switched Multipass themselves in the open sheet: their answer
+    /// stands until the sheet is opened again.
+    let mutable multipassTouched = false
 
     /// Deep-fried chicken in RenoDX's place, on the same routes. Turning it on
     /// turns Multipass off - that option only picks a RenoDX build.
@@ -654,6 +665,10 @@ type MainViewModel() as this =
     let mutable reshadeProxyPick = ModInstaller.reShadeProxyNames.[0]
     let mutable optiCustomName = ""
     let mutable reshadeCustomName = ""
+    /// The AMD route's proxy (round 26): version.dll unless renamed here.
+    let mutable amdProxyName = ""
+    let mutable amdProxyPick = ModInstaller.amdProxyNames.[0]
+    let mutable amdCustomName = ""
     let mutable dllNameStatus = ""
     let mutable dllNameIsError = false
     /// The names come from ModInstaller's cache, or from a read of the disk in
@@ -663,6 +678,7 @@ type MainViewModel() as this =
     let mutable dllFolderNames: Set<string> = Set.empty
     let mutable optiChoices: string[] = ModInstaller.optiScalerProxyNames
     let mutable reshadeChoices: string[] = ModInstaller.reShadeProxyNames
+    let mutable amdChoices: string[] = ModInstaller.amdProxyNames
     let mutable dllScanGeneration = 0
     let mutable dllBusy = false
 
@@ -670,6 +686,50 @@ type MainViewModel() as this =
     /// choice for every install, not one per game.
     let mutable optiMenuKey = ModInstaller.savedOptiMenuKey ()
     let mutable optiKeyStatus = ""
+
+    // ---- Advanced install (Settings -> Features) ---------------------------
+    /// The setting: a game opens in the advanced sheet, where every part of
+    /// the mod is installed and removed on its own, instead of the one-click one.
+    let mutable isAdvancedInstall = false
+
+    /// Settings -> Features -> Minimize to tray.
+    let mutable isMinimizeToTray = false
+
+    /// Which sheet the open game is showing. Decided when it opens, so turning
+    /// the setting over never swaps a sheet out from under the user.
+    let mutable isAdvancedSheet = false
+
+    /// The sheet the next `OpenManage` must use, when the user asked for it
+    /// with the mode button - otherwise the setting decides.
+    let mutable forcedSheet: bool option = None
+
+    /// Everything the advanced sheet reads from this one, read fresh each
+    /// time: the executable can change while it is open.
+    let advancedContext () : AdvancedContext option =
+        match manageCard with
+        | Some card when not (String.IsNullOrWhiteSpace(manageExePath)) ->
+            Some
+                { AdvancedContext.Game = card.Game
+                  ExePath = manageExePath
+                  Plan =
+                    manageAnalysis
+                    |> Option.map (fun a ->
+                        { ModInstaller.InstallPlan.DlssDirs = a.DlssDirs
+                          ModInstaller.InstallPlan.StreamlineDirs = a.StreamlineDirs })
+                  DetectedApi = detectedApi
+                  DetectedArch = detectedArch
+                  DetectedDlss = detectedDlss
+                  IsEmulator = isEmulatorTarget
+                  IsAmdMode = isAmdMode
+                  Overlay =
+                    { ModInstaller.OverlayOptions.Enabled = isOverlayEnabled
+                      ModInstaller.OverlayOptions.Theme = overlayTheme
+                      ModInstaller.OverlayOptions.Hotkey = overlayHotkey }
+                  OverlayReady = assets.IsOverlayReady }
+        | _ -> None
+
+    let advanced =
+        AdvancedInstallViewModel(advancedContext, (fun kind ok -> this.AdvancedFinished(kind, ok)))
 
     let createVignetteBrush (edgeHex: string) =
         let brush = RadialGradientBrush()
@@ -788,8 +848,14 @@ type MainViewModel() as this =
             | _ -> ())
 
         isAmdMode <- settings.AmdMode
-        screen.SetAmdBlocked(isAmdMode)
+        screen.SetAmdMode(isAmdMode)
         isPerformanceMode <- settings.PerformanceMode
+        isAdvancedInstall <- settings.AdvancedInstall
+        isMinimizeToTray <- settings.MinimizeToTray
+
+        // Start with Windows is the Run entry itself; one the user turned on
+        // follows the program if an update moved it.
+        WindowsStartup.refresh ()
         overlayDefault <- not settings.OverlayDisabled
         isOverlayEnabled <- overlayDefault
 
@@ -830,9 +896,21 @@ type MainViewModel() as this =
                       PerformanceMode = isPerformanceMode
                       OverlayDisabled = not overlayDefault
                       OverlayTheme = overlayTheme
-                      OverlayHotkey = overlayHotkey })
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray })
 
             supportPromptTimer.Start()
+
+        // Round 35: what nothing will ever read again goes by itself, a minute after the start and never while
+        // an install is running (StorageCleaner.tidy - old caches, loader logs, backups no record names).
+        Threading.Tasks.Task.Run(fun () ->
+            Threading.Thread.Sleep 60000
+            Dispatcher.UIThread.Post(fun () ->
+                if not isInstalling && not advanced.IsBusy then
+                    Threading.Tasks.Task.Run(fun () ->
+                        let freed = try StorageCleaner.tidy () with _ -> 0L
+                        if freed > 0L then Dispatcher.UIThread.Post(fun () -> this.RefreshStorage())) |> ignore)) |> ignore
 
         // Emulators are hand-curated, so they simply come back as they were.
         for e in GameScanner.loadCachedEmulators () do
@@ -1013,7 +1091,66 @@ type MainViewModel() as this =
                       PerformanceMode = isPerformanceMode
                       OverlayDisabled = not overlayDefault
                       OverlayTheme = overlayTheme
-                      OverlayHotkey = overlayHotkey }
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
+
+    /// Advanced install: the next game opened goes to the large sheet where
+    /// every part is installed and removed on its own. A sheet already open
+    /// stays the kind it opened as.
+    member this.IsAdvancedInstallEnabled
+        with get () = isAdvancedInstall
+        and set value =
+            if isAdvancedInstall <> value then
+                isAdvancedInstall <- value
+                this.RaisePropertyChanged("IsAdvancedInstallEnabled")
+
+                GameScanner.saveSettings
+                    { IsSidebarLayout = isSidebarLayout
+                      ColorAtmosphere = selectedColorAtmosphere
+                      GeometricMotif = selectedGeometricMotif
+                      Language = languageCode
+                      SupportPromptVersion = supportPromptVersion
+                      AmdMode = isAmdMode
+                      PerformanceMode = isPerformanceMode
+                      OverlayDisabled = not overlayDefault
+                      OverlayTheme = overlayTheme
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
+
+    /// Minimize to tray: the window goes beside the clock when minimized, and
+    /// its icon there brings it back. MainWindow does the hiding.
+    member this.IsMinimizeToTray
+        with get () = isMinimizeToTray
+        and set value =
+            if isMinimizeToTray <> value then
+                isMinimizeToTray <- value
+                this.RaisePropertyChanged("IsMinimizeToTray")
+
+                GameScanner.saveSettings
+                    { IsSidebarLayout = isSidebarLayout
+                      ColorAtmosphere = selectedColorAtmosphere
+                      GeometricMotif = selectedGeometricMotif
+                      Language = languageCode
+                      SupportPromptVersion = supportPromptVersion
+                      AmdMode = isAmdMode
+                      PerformanceMode = isPerformanceMode
+                      OverlayDisabled = not overlayDefault
+                      OverlayTheme = overlayTheme
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
+
+    /// Start with Windows: read from the Run entry itself, so the switch always
+    /// says what Windows will really do.
+    member this.IsStartWithWindows
+        with get () = WindowsStartup.isEnabled ()
+        and set (value: bool) =
+            if WindowsStartup.isEnabled () <> value then
+                WindowsStartup.set value |> ignore
+
+            this.RaisePropertyChanged("IsStartWithWindows")
 
     /// Shown translated, stored in English: `AtmosphereOption.Key` is the
     /// identity. The collection instance is stable for the life of the window.
@@ -1051,7 +1188,9 @@ type MainViewModel() as this =
                           PerformanceMode = isPerformanceMode
                           OverlayDisabled = not overlayDefault
                           OverlayTheme = overlayTheme
-                          OverlayHotkey = overlayHotkey }
+                          OverlayHotkey = overlayHotkey
+                          AdvancedInstall = isAdvancedInstall
+                          MinimizeToTray = isMinimizeToTray }
 
     member this.SelectedColorAtmosphere
         with get () =
@@ -1082,7 +1221,9 @@ type MainViewModel() as this =
                       PerformanceMode = isPerformanceMode
                       OverlayDisabled = not overlayDefault
                       OverlayTheme = overlayTheme
-                      OverlayHotkey = overlayHotkey }
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
 
     // ---------------------------------------------------------------------
     // LANGUAGE
@@ -1119,6 +1260,7 @@ type MainViewModel() as this =
                 this.RaisePropertyChanged("SelectedOverlayThemeIndex")
                 community.RelabelFilters()
                 assets.Relabel()
+                advanced.Relabel()
                 this.RaisePropertyChanged("TotalGamesText")
                 this.RaisePropertyChanged("InstallModeHintText")
                 this.RaisePropertyChanged("DeepFriedHint")
@@ -1134,7 +1276,9 @@ type MainViewModel() as this =
                       PerformanceMode = isPerformanceMode
                       OverlayDisabled = not overlayDefault
                       OverlayTheme = overlayTheme
-                      OverlayHotkey = overlayHotkey }
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
 
     /// "TOTAL GAMES: 42" in the current language.
     member this.TotalGamesText = loc.TotalGames(totalGamesCount)
@@ -1157,7 +1301,9 @@ type MainViewModel() as this =
                       PerformanceMode = isPerformanceMode
                       OverlayDisabled = not overlayDefault
                       OverlayTheme = overlayTheme
-                      OverlayHotkey = overlayHotkey }
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
 
     member this.IsTopBarLayout = not isSidebarLayout
 
@@ -1183,6 +1329,7 @@ type MainViewModel() as this =
                 if value = "screen" then
                     screen.ApplyQuery(searchText)
                     screen.Start()
+                if value = "settings" then this.RefreshStorage()
                 this.RaisePropertyChanged("SearchPlaceholder")
                 // The search control moves between the title bar and the
                 // community filter row, so it has to hear about this.
@@ -1310,13 +1457,28 @@ type MainViewModel() as this =
         | Some card ->
             this.IsManageOpen <- false
 
+            // An install that carries the advanced sheet's changes is posted
+            // as one, with the parts it is made of - never the user's own
+            // extras, add-ons or plugins - and only ever as working.
+            let advancedInstall = AdvancedInstall.isEasyLocked card.Game
+
+            let parts =
+                if advancedInstall then AdvancedInstall.sharedParts card.Game manageExePath else [||]
+
+            // Anything of the user's own in it - Settings' extras, add-ons,
+            // plugins, a file for this game - and the post says EXTRA.
+            let hasExtra = AdvancedInstall.hasUserExtras card.Game manageExePath
+
             community.OpenComposer(
                 card.Game,
                 isOverlayEnabled,
                 ModInstaller.modeKey installMode,
                 ModInstaller.optiApiKey optiApi,
                 ModInstaller.archKey installArch,
-                useNeuralAddon
+                useNeuralAddon,
+                advancedInstall,
+                parts,
+                hasExtra
             )
 
             this.ActiveSection <- "community"
@@ -1421,13 +1583,24 @@ type MainViewModel() as this =
         matchesCard searchText [ loc.OverlaySection; loc.OverlayTitle; loc.OverlayTagline; loc.OverlayStyle
                                  "overlay"; "dynamic overlay"; "hud"; "fps"; "vram"; "telemetry"; "theme"; "in-game" ]
 
-    /// The three feature switches share one card, so the card is on screen when
-    /// any of its rows is - each row still hides itself on its own property.
+    member this.ShowTrayCard =
+        matchesCard searchText [ loc.MinimizeToTray; loc.MinimizeToTrayTip; "tray"; "minimize"; "minimise"; "clock"; "taskbar" ]
+
+    member this.ShowStartupCard =
+        matchesCard searchText [ loc.StartWithWindows; loc.StartWithWindowsTip; "startup"; "start"; "windows"; "boot"; "sign in" ]
+
+    member this.ShowAdvancedInstallCard =
+        matchesCard searchText [ loc.AdvInstall; loc.AdvInstallTip; "advanced"; "advanced install"; "install"
+                                 "reshade"; "renodx"; "host64"; "optiscaler"; "manual" ]
+
+    /// The feature switches share one card, so the card is on screen when any
+    /// of its rows is - each row still hides itself on its own property.
     member this.ShowFeaturesCard =
-        this.ShowOverlayCard || this.ShowAmdCard || this.ShowPerformanceCard
+        this.ShowOverlayCard || this.ShowAmdCard || this.ShowPerformanceCard || this.ShowAdvancedInstallCard
+        || this.ShowTrayCard || this.ShowStartupCard
 
     member this.ShowSupportCard =
-        matchesCard searchText [ "support"; "donate"; "ko-fi"; "kofi"; "tutorial"; "tutorials"; "guide"
+        matchesCard searchText [ "support"; "donate"; "patreon"; "ko-fi"; "kofi"; "tutorial"; "tutorials"; "guide"
                                  "youtube"; "video"; "help"; "channel"; "nodix" ]
 
     member this.ShowAboutCard =
@@ -1446,6 +1619,9 @@ type MainViewModel() as this =
             || this.ShowPerformanceCard
             || this.ShowAmdCard
             || this.ShowOverlayCard
+            || this.ShowAdvancedInstallCard
+            || this.ShowTrayCard
+            || this.ShowStartupCard
             || this.ShowSupportCard
             || this.ShowAboutCard
         )
@@ -1471,6 +1647,9 @@ type MainViewModel() as this =
         this.RaisePropertyChanged("ShowPerformanceCard")
         this.RaisePropertyChanged("ShowAmdCard")
         this.RaisePropertyChanged("ShowOverlayCard")
+        this.RaisePropertyChanged("ShowAdvancedInstallCard")
+        this.RaisePropertyChanged("ShowTrayCard")
+        this.RaisePropertyChanged("ShowStartupCard")
         this.RaisePropertyChanged("ShowFeaturesCard")
         this.RaisePropertyChanged("ShowSupportCard")
         this.RaisePropertyChanged("ShowAboutCard")
@@ -1499,6 +1678,41 @@ type MainViewModel() as this =
     member this.ScanStatusText
         with get () = scanStatusText
         and set value = this.SetProperty(&scanStatusText, value) |> ignore
+
+    // ---- storage (round 35) ------------------------------------------------------
+    member _.StorageUsedText =
+        if storageUsed < 0L then "…" else StorageCleaner.text storageUsed
+    member _.StorageFreeText =
+        if storageFreeable < 0L then "…" else StorageCleaner.text storageFreeable
+    member _.StorageNote = storageNote
+    member _.HasStorageNote = storageNote <> ""
+    member _.CanFreeUpSpace = not storageFreeing && storageFreeable > 0L && not isInstalling && not advanced.IsBusy
+
+    /// Measured away from the window's thread (the backups take a moment to add up).
+    member this.RefreshStorage() =
+        Threading.Tasks.Task.Run(fun () ->
+            let report = try Some(StorageCleaner.measure (StorageCleaner.smfgRunning ())) with _ -> None
+            Dispatcher.UIThread.Post(fun () ->
+                match report with
+                | Some r ->
+                    storageUsed <- r.Used
+                    storageFreeable <- r.Freeable
+                | None -> ()
+                for name in [ "StorageUsedText"; "StorageFreeText"; "CanFreeUpSpace" ] do this.RaisePropertyChanged(name))) |> ignore
+
+    /// "Free up space": never while an install is running.
+    member this.FreeUpSpace() =
+        if not storageFreeing && not isInstalling && not advanced.IsBusy then
+            storageFreeing <- true
+            this.RaisePropertyChanged("CanFreeUpSpace")
+            Threading.Tasks.Task.Run(fun () ->
+                let freed = try StorageCleaner.freeUp (StorageCleaner.smfgRunning ()) with _ -> 0L
+                Dispatcher.UIThread.Post(fun () ->
+                    storageFreeing <- false
+                    storageNote <- String.Format(Localization.current.StorageFreed, StorageCleaner.text freed)
+                    this.RaisePropertyChanged("StorageNote")
+                    this.RaisePropertyChanged("HasStorageNote")
+                    this.RefreshStorage())) |> ignore
 
     member this.ClearCacheAndRescan() =
         GameScanner.clearCache ()
@@ -1837,7 +2051,54 @@ type MainViewModel() as this =
     // ---------------------------------------------------------------------
     member this.IsManageOpen
         with get () = isManageOpen
-        and set value = this.SetProperty(&isManageOpen, value) |> ignore
+        and set value =
+            if this.SetProperty(&isManageOpen, value) then
+                this.RaisePropertyChanged("IsSimpleManageShown")
+                this.RaisePropertyChanged("IsAdvancedManageShown")
+
+    /// The two sheets a game can open in: the one-click one, or - with
+    /// Advanced install on in Settings - the large one with every part.
+    member _.IsSimpleManageShown = isManageOpen && not isAdvancedSheet
+    member _.IsAdvancedManageShown = isManageOpen && isAdvancedSheet
+
+    /// The advanced sheet's own state: the parts, the plan, the run.
+    member _.Advanced = advanced
+
+    /// The mode button beside the game's name: the other sheet, for this game
+    /// only - the setting keeps deciding where every game opens. Back to the
+    /// one-click sheet is refused while the advanced sheet's changes are on
+    /// the game or waiting to be applied (`Advanced.CanGoEasy`).
+    member this.SwitchSheet() =
+        match manageCard with
+        | Some card when not isInstalling && not advanced.IsBusy ->
+            if isAdvancedSheet then
+                if advanced.CanGoEasy then
+                    forcedSheet <- Some false
+                    this.OpenManage(card)
+            else
+                forcedSheet <- Some true
+                this.OpenManage(card)
+        | _ -> ()
+
+    /// The game's name in the one-click sheet's header leaves room for the
+    /// mode button, and for the anti-cheat mark when there is one.
+    member _.ManageTitleMaxWidth = if manageAntiCheat.IsSome then 170.0 else 205.0
+
+    /// A run of the advanced sheet ended: the same follow-up as the one-click
+    /// install - the chime, the keys written in, the badge, a fresh read.
+    member private this.AdvancedFinished(kind: string, ok: bool) =
+        if ok then
+            if kind = "remove" then
+                UiSounds.uninstallDone ()
+            elif kind = "install" then
+                UiSounds.installDone ()
+                this.ApplyKeysToInstall()
+
+        match manageCard with
+        | Some c -> c.RefreshModBadge()
+        | None -> ()
+
+        this.AnalyzeManageTarget()
 
     member this.ManageCard = manageCard
     member this.ManageTitle = manageTitle
@@ -1854,7 +2115,7 @@ type MainViewModel() as this =
         and set value =
             if this.SetProperty(&isAnalyzing, value) then
                 this.RaisePropertyChanged("IsManageReady")
-                for name in [ "CanApplyDllName"; "CanRenameOptiCustom"; "CanRenameReShadeCustom" ] do
+                for name in [ "CanApplyDllName"; "CanRenameOptiCustom"; "CanRenameReShadeCustom"; "CanRenameAmdCustom" ] do
                     this.RaisePropertyChanged(name)
 
     member this.IsInstalling
@@ -1862,7 +2123,7 @@ type MainViewModel() as this =
         and set value =
             if this.SetProperty(&isInstalling, value) then
                 this.RaisePropertyChanged("IsManageReady")
-                for name in [ "CanApplyDllName"; "CanRenameOptiCustom"; "CanRenameReShadeCustom" ] do
+                for name in [ "CanApplyDllName"; "CanRenameOptiCustom"; "CanRenameReShadeCustom"; "CanRenameAmdCustom" ] do
                     this.RaisePropertyChanged(name)
                 this.RaiseDlss5State()
 
@@ -1918,9 +2179,10 @@ type MainViewModel() as this =
                 this.RaisePropertyChanged("IsAmdModeEnabled")
                 this.RaisePropertyChanged("IsGameTarget")
                 this.RaisePropertyChanged("IsDllNameCardVisible")
+                this.RaisePropertyChanged("IsAdvancedDllNameCardVisible")
                 this.RaisePropertyChanged("IsAmdRouteActive")
-                // LIVE FLOW runs on NVIDIA's network and optical flow only.
-                screen.SetAmdBlocked(value)
+                // LIVE FLOW switches to its Radeon version (ALPHA) and back.
+                screen.SetAmdMode(value)
 
                 GameScanner.saveSettings
                     { IsSidebarLayout = isSidebarLayout
@@ -1932,7 +2194,9 @@ type MainViewModel() as this =
                       PerformanceMode = isPerformanceMode
                       OverlayDisabled = not overlayDefault
                       OverlayTheme = overlayTheme
-                      OverlayHotkey = overlayHotkey }
+                      OverlayHotkey = overlayHotkey
+                      AdvancedInstall = isAdvancedInstall
+                      MinimizeToTray = isMinimizeToTray }
 
     /// True while the open sheet will install through the AMD payload.
     member this.IsAmdRouteActive = isAmdMode && not isEmulatorTarget
@@ -2034,6 +2298,7 @@ type MainViewModel() as this =
     member private this.ApplyDllNames(info: ModInstaller.ProxyNamesInfo) =
         optiProxyName <- (if isNull info.OptiName then "" else info.OptiName)
         reshadeProxyName <- (if isNull info.ReShadeName then "" else info.ReShadeName)
+        amdProxyName <- (if isNull info.AmdName then "" else info.AmdName)
 
         dllFolderNames <-
             (if isNull info.FolderDlls then Set.empty
@@ -2048,6 +2313,7 @@ type MainViewModel() as this =
 
         optiChoices <- free ModInstaller.optiScalerProxyNames optiProxyName
         reshadeChoices <- free ModInstaller.reShadeProxyNames reshadeProxyName
+        amdChoices <- free ModInstaller.amdProxyNames amdProxyName
 
         let pick (choices: string[]) (current: string) (previous: string) =
             match choices |> Array.tryFind (fun x -> x.Equals(current, StringComparison.OrdinalIgnoreCase)) with
@@ -2059,13 +2325,15 @@ type MainViewModel() as this =
 
         optiProxyPick <- pick optiChoices optiProxyName optiProxyPick
         reshadeProxyPick <- pick reshadeChoices reshadeProxyName reshadeProxyPick
+        amdProxyPick <- pick amdChoices amdProxyName amdProxyPick
 
         for name in
             [ "OptiProxyNames"; "ReShadeProxyNames"; "HasOptiProxy"; "OptiProxyName"; "HasReShadeProxy"
               "ReShadeProxyName"; "HasNoProxy"; "SelectedOptiProxyName"; "SelectedReShadeProxyName"
-              "IsDllNameCardVisible"; "IsEmulatorDllNameVisible"; "IsEmulatorVulkanLayer"
+              "IsDllNameCardVisible"; "IsAdvancedDllNameCardVisible"; "IsEmulatorDllNameVisible"; "IsEmulatorVulkanLayer"
               "CanRenameOptiCustom"; "CanRenameReShadeCustom"; "IsOptiCustomTaken"; "IsReShadeCustomTaken"
-              "CanApplyDllName" ] do
+              "AmdProxyNames"; "HasAmdProxy"; "AmdProxyName"; "SelectedAmdProxyName"; "CanRenameAmdCustom"
+              "IsAmdCustomTaken"; "ShowAmdProxySeparator"; "CanApplyDllName" ] do
             this.RaisePropertyChanged(name)
 
     /// The names for the open game: from the cache at once when it still
@@ -2079,6 +2347,7 @@ type MainViewModel() as this =
         | None ->
             dllNamesKnown <- false
             this.RaisePropertyChanged("IsDllNameCardVisible")
+            this.RaisePropertyChanged("IsAdvancedDllNameCardVisible")
         | Some card ->
             let game = card.Game
 
@@ -2087,6 +2356,7 @@ type MainViewModel() as this =
             | None ->
                 dllNamesKnown <- false
                 this.RaisePropertyChanged("IsDllNameCardVisible")
+                this.RaisePropertyChanged("IsAdvancedDllNameCardVisible")
                 this.RaisePropertyChanged("IsEmulatorVulkanLayer")
 
                 System.Threading.Tasks.Task.Run(fun () ->
@@ -2109,7 +2379,13 @@ type MainViewModel() as this =
     member _.OptiProxyName = optiProxyName
     member _.HasReShadeProxy = reshadeProxyName <> ""
     member _.ReShadeProxyName = reshadeProxyName
-    member _.HasNoProxy = optiProxyName = "" && reshadeProxyName = ""
+    member _.AmdProxyNames = amdChoices
+    member _.HasAmdProxy = amdProxyName <> ""
+    member _.AmdProxyName = amdProxyName
+    member _.HasNoProxy = optiProxyName = "" && reshadeProxyName = "" && amdProxyName = ""
+
+    /// A line above the AMD rows when another proxy is listed over them.
+    member _.ShowAmdProxySeparator = amdProxyName <> "" && (optiProxyName <> "" || reshadeProxyName <> "")
 
     /// Not offered at all before the mod is on the game: there is nothing to
     /// rename until an install has put a proxy there.
@@ -2118,7 +2394,15 @@ type MainViewModel() as this =
         // the install that is about to be removed, not to the one being picked.
         not this.IsSwitchingRoute
         && dllNamesKnown
-        && ((this.IsGameTarget && not this.HasNoProxy) || this.IsEmulatorDllNameVisible)
+        && ((this.IsGameTarget && not this.HasNoProxy)
+            || this.IsEmulatorDllNameVisible
+            // AMD mode shows no route picker, but its payload is renamed here too.
+            || (this.IsAmdRouteActive && this.HasAmdProxy))
+
+    /// The DLL NAME card in the advanced sheet: whenever the install has a
+    /// proxy to rename. There is no route switch to wait for there.
+    member this.IsAdvancedDllNameCardVisible =
+        dllNamesKnown && (not this.HasNoProxy || this.IsEmulatorDllNameVisible)
 
     /// Emulators: ReShade is renamed like on a game when it went in on the
     /// DirectX slot (a DLL beside the emulator). On Vulkan it is a layer and
@@ -2135,6 +2419,10 @@ type MainViewModel() as this =
         with get () = reshadeProxyPick
         and set (value: string) = if not (isNull value) then this.SetProperty(&reshadeProxyPick, value) |> ignore
 
+    member this.SelectedAmdProxyName
+        with get () = amdProxyPick
+        and set (value: string) = if not (isNull value) then this.SetProperty(&amdProxyPick, value) |> ignore
+
     member this.OptiCustomName
         with get () = optiCustomName
         and set (value: string) =
@@ -2149,10 +2437,18 @@ type MainViewModel() as this =
                 this.RaisePropertyChanged("CanRenameReShadeCustom")
                 this.RaisePropertyChanged("IsReShadeCustomTaken")
 
+    member this.AmdCustomName
+        with get () = amdCustomName
+        and set (value: string) =
+            if this.SetProperty(&amdCustomName, (if isNull value then "" else value)) then
+                this.RaisePropertyChanged("CanRenameAmdCustom")
+                this.RaisePropertyChanged("IsAmdCustomTaken")
+
     /// The typed name is already a file in the game folder: said under the
     /// box, and Apply stays off. The installer refuses it too, on its own.
     member this.IsOptiCustomTaken = this.IsNameTaken(ModInstaller.normalizeProxyName optiCustomName, optiProxyName)
     member this.IsReShadeCustomTaken = this.IsNameTaken(ModInstaller.normalizeProxyName reshadeCustomName, reshadeProxyName)
+    member this.IsAmdCustomTaken = this.IsNameTaken(ModInstaller.normalizeProxyName amdCustomName, amdProxyName)
 
     member this.CanApplyDllName = not isInstalling && not isAnalyzing && not dllBusy
 
@@ -2161,6 +2457,9 @@ type MainViewModel() as this =
 
     member this.CanRenameReShadeCustom =
         this.CanApplyDllName && ModInstaller.normalizeProxyName reshadeCustomName <> "" && not this.IsReShadeCustomTaken
+
+    member this.CanRenameAmdCustom =
+        this.CanApplyDllName && ModInstaller.normalizeProxyName amdCustomName <> "" && not this.IsAmdCustomTaken
 
     member _.DllNameStatus = dllNameStatus
     member _.HasDllNameStatus = not (String.IsNullOrWhiteSpace(dllNameStatus))
@@ -2178,6 +2477,7 @@ type MainViewModel() as this =
             this.RaisePropertyChanged("CanApplyDllName")
             this.RaisePropertyChanged("CanRenameOptiCustom")
             this.RaisePropertyChanged("CanRenameReShadeCustom")
+            this.RaisePropertyChanged("CanRenameAmdCustom")
             let game = card.Game
 
             System.Threading.Tasks.Task.Run(fun () ->
@@ -2193,7 +2493,8 @@ type MainViewModel() as this =
                     this.RaisePropertyChanged("DllNameStatusBrush")
                     this.RaisePropertyChanged("CanApplyDllName")
                     this.RaisePropertyChanged("CanRenameOptiCustom")
-                    this.RaisePropertyChanged("CanRenameReShadeCustom")))
+                    this.RaisePropertyChanged("CanRenameReShadeCustom")
+                    this.RaisePropertyChanged("CanRenameAmdCustom")))
             |> ignore
         | _ -> ()
 
@@ -2201,6 +2502,8 @@ type MainViewModel() as this =
     member this.RenameReShadeToPick() = this.RenameProxy(ModInstaller.ReShadeProxyDll, reshadeProxyPick)
     member this.RenameOptiToCustom() = this.RenameProxy(ModInstaller.OptiScalerProxyDll, optiCustomName)
     member this.RenameReShadeToCustom() = this.RenameProxy(ModInstaller.ReShadeProxyDll, reshadeCustomName)
+    member this.RenameAmdToPick() = this.RenameProxy(ModInstaller.AmdProxyDll, amdProxyPick)
+    member this.RenameAmdToCustom() = this.RenameProxy(ModInstaller.AmdProxyDll, amdCustomName)
 
     /// The folder of the game whose sheet is open, when it has an install for
     /// the keys to be written into - "" otherwise.
@@ -2312,7 +2615,9 @@ type MainViewModel() as this =
               PerformanceMode = isPerformanceMode
               OverlayDisabled = not overlayDefault
               OverlayTheme = overlayTheme
-              OverlayHotkey = overlayHotkey }
+              OverlayHotkey = overlayHotkey
+              AdvancedInstall = isAdvancedInstall
+              MinimizeToTray = isMinimizeToTray }
 
     /// What the current sheet would install, so the manage sheet can say
     /// whether the overlay is coming along.
@@ -2437,9 +2742,21 @@ type MainViewModel() as this =
     member this.IsMultipassOff = not useMultipass
 
     member this.SetMultipass(on: bool) =
+        multipassTouched <- true
+
         if useMultipass <> on then
             useMultipass <- on
             this.RaiseInstallModeState()
+
+    /// Multipass arrives switched on wherever it applies - unless the user
+    /// switched it in this sheet, or the route on screen is the one already
+    /// installed: then the sheet shows what that install carried, so nothing
+    /// reads as a change nobody made. Deep-fried chicken takes RenoDX's place,
+    /// so with it on there is no build to pick.
+    member private this.ApplyMultipassDefault() =
+        if not multipassTouched then
+            let onInstalledRoute = installedRoute <> "" && installedRoute = ModInstaller.modeKey installMode
+            useMultipass <- (if onInstalledRoute then installedMultipass else not useDeepFried)
 
     /// Deep-fried chicken goes in where RenoDX would have, so Multipass - which
     /// only decides which RenoDX build to use - is switched off with it and
@@ -2451,7 +2768,7 @@ type MainViewModel() as this =
     member this.SetDeepFried(on: bool) =
         if useDeepFried <> on then
             useDeepFried <- on
-            if on then useMultipass <- false
+            if on then useMultipass <- false else this.ApplyMultipassDefault()
             this.RaiseInstallModeState()
 
     /// On DX9 32-bit the payload is the point of the route, so it arrives
@@ -2472,6 +2789,10 @@ type MainViewModel() as this =
             if wanted <> useDeepFried then
                 useDeepFried <- wanted
                 if wanted then useMultipass <- false
+
+        // The route or build changed: Multipass follows it (the installed
+        // route shows its install, any other the default).
+        this.ApplyMultipassDefault()
 
     member this.IsDeepFriedInstalled =
         installedDeepFried
@@ -2923,6 +3244,7 @@ type MainViewModel() as this =
         this.RaisePropertyChanged("SwitchButtonText")
         this.RaisePropertyChanged("IsSwitchingRoute")
         this.RaisePropertyChanged("IsDllNameCardVisible")
+        this.RaisePropertyChanged("IsAdvancedDllNameCardVisible")
         this.RaisePropertyChanged("IsOptiScalerInstalled")
         this.RaisePropertyChanged("IsDx12Installed")
         this.RaisePropertyChanged("IsDx11Installed")
@@ -3068,6 +3390,9 @@ type MainViewModel() as this =
         // game is from the file we now believe in. Emulators have one route.
         if not isEmulatorTarget && not isAmdMode then this.DetectTarget(true)
 
+        // The advanced sheet reads the same game: it follows every fresh read.
+        if isManageOpen && isAdvancedSheet then advanced.Refresh()
+
     /// Re-runs the deep scan for the open game and refreshes the stored record.
     member this.AnalyzeManageTarget() =
         match manageCard with
@@ -3127,6 +3452,18 @@ type MainViewModel() as this =
         this.InstallResultText <- ""
         this.InstallProgress <- 0.0
         this.InstallStatusText <- ""
+        // Decided here, once per opening: the setting only changes the next one.
+        // A game carrying changes made in the advanced sheet always opens
+        // there - the one-click sheet cannot describe them.
+        isAdvancedSheet <-
+            match forcedSheet with
+            | Some advanced -> advanced || AdvancedInstall.isEasyLocked card.Game
+            | None -> isAdvancedInstall || AdvancedInstall.isEasyLocked card.Game
+
+        forcedSheet <- None
+        this.RaisePropertyChanged("ManageTitleMaxWidth")
+        this.RaisePropertyChanged("IsSimpleManageShown")
+        this.RaisePropertyChanged("IsAdvancedManageShown")
         this.IsManageOpen <- true
         this.SetKeysStatus("")
         this.CheckAntiCheat(card)
@@ -3150,6 +3487,10 @@ type MainViewModel() as this =
         useMfgUnlock <- installedMfgUnlock
         useMultipass <- installedMultipass
         useDeepFried <- installedDeepFried
+        // A game with nothing of ours on it gets Multipass on; the route the
+        // sheet settles on below applies the same rule again.
+        multipassTouched <- false
+        this.ApplyMultipassDefault()
 
         // The overlay is a choice per game: one this app installed opens on
         // what its install carried, any other on the last choice made.
@@ -3231,6 +3572,9 @@ type MainViewModel() as this =
         // itself changed. One sweep settles the whole sheet.
         this.RaiseInstallModeState()
 
+        // The advanced sheet starts from the same reading of the game.
+        if isAdvancedSheet then advanced.Open()
+
         // Everything was already measured during the scan, so the sheet opens
         // fully populated. Only a game we have never analyzed pays the cost.
         match AnalysisStore.tryGet card.Game with
@@ -3270,11 +3614,12 @@ type MainViewModel() as this =
                     manageAntiCheat <- found
                     this.RaisePropertyChanged("HasAntiCheat")
                     this.RaisePropertyChanged("AntiCheatText")
+                    this.RaisePropertyChanged("ManageTitleMaxWidth")
                 | _ -> ()))
         |> ignore
 
     member this.CloseManage() =
-        if not isInstalling then
+        if not isInstalling && not advanced.IsBusy then
             this.IsManageOpen <- false
             manageCard <- None
 
@@ -3455,9 +3800,9 @@ type MainViewModel() as this =
     member this.SupportPromptTitle = "Enjoying DLSS 5 MANAGER?"
 
     member this.SupportPromptText =
-        "You have been using it for a while now. It is free and always will be - a tip on Ko-fi is what pays for the next release."
+        "You have been using it for a while now. It is free and always will be - support on Patreon is what pays for the next release."
 
-    member this.DonateUrl = "https://ko-fi.com/nodix"
+    member this.DonateUrl = "https://www.patreon.com/c/nodixtech/shop"
     member this.TutorialsUrl = "https://www.youtube.com/@Nodix-Tech"
 
     // Authorship & rights, shown in the About card.

@@ -1004,6 +1004,15 @@ module GameScanner =
         /// a settings file written before the overlay had a picker, which
         /// reads back as the default.
         OverlayHotkey: string
+        /// Advanced install: the Manage sheet opens as a large window where
+        /// every part of the mod is installed and removed on its own. Off by
+        /// default, and a settings file written before it existed reads back
+        /// as off - the one-click sheet everyone knows.
+        AdvancedInstall: bool
+        /// Minimize to tray: minimizing hides the window beside the clock
+        /// instead of the taskbar. Off by default, and off on a settings file
+        /// written before it existed.
+        MinimizeToTray: bool
     }
 
     let private getSettingsFilePath () =
@@ -1022,7 +1031,9 @@ module GameScanner =
           PerformanceMode = false
           OverlayDisabled = false
           OverlayTheme = "Neon Emerald"
-          OverlayHotkey = "Shift+O" }
+          OverlayHotkey = "Shift+O"
+          AdvancedInstall = false
+          MinimizeToTray = false }
 
     let loadSettings () : AppSettings =
         try

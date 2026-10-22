@@ -31,7 +31,14 @@ module ModInstaller =
     type InstalledFile =
         { TargetPath: string
           BackupPath: string
-          WasExisting: bool }
+          WasExisting: bool
+          /// Advanced install only: which part of the mod put this file here
+          /// ("reshade", "renodx", "host64", ...), so that part can be taken
+          /// off on its own. Null for every file the one-click install writes,
+          /// and then it is not written at all - those records read exactly
+          /// as they always did. See `AdvancedInstall.partOf`.
+          [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingNull)>]
+          Component: string }
 
     [<CLIMutable>]
     type InstallManifest =
@@ -71,6 +78,18 @@ module ModInstaller =
           /// went in on Vulkan. Empty here means nobody has chosen and the
           /// catalogue decides, which is what every build before 1.2.7 did.
           EmuApi: string
+          /// "1" while the install holds changes made in the advanced install
+          /// sheet: the one-click sheet stays closed to this game until they
+          /// are taken off again or the install is removed. "0" once they were
+          /// all taken off. Null - and not written - for everything the
+          /// one-click install records. See `AdvancedInstall.isEasyLocked`.
+          [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingNull)>]
+          Advanced: string
+          /// The one-click install the advanced changes were made on top of, as
+          /// "part:variant" pairs - what taking them off has to come back to.
+          /// Null when the advanced sheet made the install from nothing.
+          [<Serialization.JsonIgnore(Condition = Serialization.JsonIgnoreCondition.WhenWritingNull)>]
+          EasyBase: string
           Files: InstalledFile[] }
 
     /// The mutually exclusive install routes offered in the Manage sheet.
@@ -155,7 +174,7 @@ module ModInstaller =
 
     /// Rebuilds folder descriptors from cached paths, re-reading the versions
     /// straight off disk so a stale cache can never cause a wrong decision.
-    let private foldersFromPaths (dirs: string[]) (fileNames: string[]) : GameAnalyzer.ModFolder list =
+    let internal foldersFromPaths (dirs: string[]) (fileNames: string[]) : GameAnalyzer.ModFolder list =
         if isNull (box dirs) then
             []
         else
@@ -209,7 +228,7 @@ module ModInstaller =
 
             found
 
-    let private safeId (game: GameItem) =
+    let internal safeId (game: GameItem) =
         let raw =
             if String.IsNullOrWhiteSpace(game.AppId) then game.Title else game.AppId
 
@@ -229,14 +248,14 @@ module ModInstaller =
     /// and it says plainly what was added and where it came from.
     let installRecordName = "dlss5-install.json"
 
-    let private manifestPath (game: GameItem) =
+    let internal manifestPath (game: GameItem) =
         let dir = Path.Combine(appDataRoot (), "Installs")
         Directory.CreateDirectory(dir) |> ignore
         Path.Combine(dir, safeId game + ".json")
 
     /// The record beside the game itself. "" when we do not know where the
     /// game is, which is not the same as knowing there is no record.
-    let private sidecarPath (game: GameItem) =
+    let internal sidecarPath (game: GameItem) =
         try
             let dir = Path.GetDirectoryName(game.TargetExecutablePath)
 
@@ -256,7 +275,7 @@ module ModInstaller =
     /// that is plainly there - and `priorEntries` doing that is worse than
     /// cosmetic: it would start the tracker empty, so our own deployed files
     /// would be mistaken for the game's originals and backed up as such.
-    let private recordPathFor (game: GameItem) =
+    let internal recordPathFor (game: GameItem) =
         let primary = manifestPath game
 
         if File.Exists(primary) then
@@ -265,7 +284,7 @@ module ModInstaller =
             let beside = sidecarPath game
             if beside <> "" && File.Exists(beside) then beside else ""
 
-    let private backupRoot (game: GameItem) =
+    let internal backupRoot (game: GameItem) =
         let dir = Path.Combine(appDataRoot (), "Backups", safeId game)
         Directory.CreateDirectory(dir) |> ignore
         dir
@@ -276,7 +295,7 @@ module ModInstaller =
     /// protects - anything under Program Files - has to be found out here and
     /// reported plainly, rather than failing halfway through with an
     /// access-denied exception.
-    let private canWriteTo (dir: string) =
+    let internal canWriteTo (dir: string) =
         try
             if String.IsNullOrWhiteSpace(dir) || not (Directory.Exists(dir)) then
                 false
@@ -287,10 +306,10 @@ module ModInstaller =
         with _ ->
             false
 
-    let private elevationNeededMessage =
+    let internal elevationNeededMessage =
         "Windows will not let the app write to this game's folder. Close DLSS 5 MANAGER, right-click it and choose \"Run as administrator\", then try again."
 
-    let private shortHash (text: string) =
+    let internal shortHash (text: string) =
         use sha = SHA256.Create()
         let bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(text.ToLowerInvariant()))
         BitConverter.ToString(bytes).Replace("-", "").Substring(0, 10).ToLowerInvariant()
@@ -303,7 +322,7 @@ module ModInstaller =
     /// `known` is seeded from a previous manifest, so repairing an install never
     /// mistakes our own already-deployed file for an original game file - which
     /// would otherwise poison the backup and break uninstall.
-    type private Tracker(backupDir: string, prior: InstalledFile[]) =
+    type internal Tracker(backupDir: string, prior: InstalledFile[]) =
         let entries = Dictionary<string, InstalledFile>(StringComparer.OrdinalIgnoreCase)
         let addedThisRun = List<InstalledFile>()
 
@@ -316,13 +335,25 @@ module ModInstaller =
         member _.Entries = entries.Values |> Seq.toArray
         member _.AddedThisRun = addedThisRun
 
+        /// The part of the mod the next files belong to. Only the advanced
+        /// install sets it; the one-click install leaves it null.
+        member val Component: string = null with get, set
+
+        /// Hands a recorded file over to another part - the advanced install's
+        /// DirectX 9 wrapper taking the d3d9.dll slot ReShade has just left.
+        member _.Retag(target: string, part: string) =
+            match entries.TryGetValue(target) with
+            | true, entry -> entries.[target] <- { entry with Component = part }
+            | _ -> ()
+
         /// Remembers a file created by an external tool (the ReShade setup).
-        member _.Record(target: string, existedBefore: bool, backupPath: string) =
+        member this.Record(target: string, existedBefore: bool, backupPath: string) =
             if not (entries.ContainsKey(target)) then
                 let entry =
                     { TargetPath = target
                       BackupPath = backupPath
-                      WasExisting = existedBefore }
+                      WasExisting = existedBefore
+                      Component = this.Component }
 
                 entries.[target] <- entry
                 addedThisRun.Add(entry)
@@ -1103,12 +1134,14 @@ module ModInstaller =
     // =====================================================================
     // PROXY NAME (optional, Manage sheet -> "DLL name")
     // =====================================================================
-    /// The two proxies the user may give a different name after an install.
+    /// The proxies the user may give a different name after an install.
     /// Nothing about the install itself changes: it still picks the name it
     /// always did, and this only moves the file afterwards when asked.
     type ProxyKind =
         | OptiScalerProxyDll
         | ReShadeProxyDll
+        /// The AMD route's payload (round 26), installed as version.dll.
+        | AmdProxyDll
 
     /// The names offered in the list. Any other name can be typed in.
     let optiScalerProxyNames =
@@ -1118,22 +1151,49 @@ module ModInstaller =
         [| "dxgi.dll"; "winmm.dll"; "version.dll"; "d3d12.dll"; "wininet.dll"; "winhttp.dll"
            "d3d11.dll"; "d3d9.dll"; "opengl32.dll" |]
 
-    /// Is this file the given proxy? OptiScaler keeps its original filename in
-    /// the version resource whatever it is called; ReShade keeps its product name.
-    let private isProxyOf (kind: ProxyKind) (path: string) =
-        try
-            File.Exists(path)
-            && (let fvi = FileVersionInfo.GetVersionInfo(path)
+    /// OptiScaler's names, version.dll - where the install puts it - first.
+    let amdProxyNames =
+        [| "version.dll"; "dxgi.dll"; "winmm.dll"; "dbghelp.dll"; "d3d12.dll"; "wininet.dll"; "winhttp.dll" |]
 
-                match kind with
-                | OptiScalerProxyDll ->
-                    not (isNull fvi.OriginalFilename)
-                    && fvi.OriginalFilename.Equals("OptiScaler.dll", StringComparison.OrdinalIgnoreCase)
-                | ReShadeProxyDll -> not (isNull fvi.ProductName) && fvi.ProductName.Contains("ReShade"))
+    /// The AMD payload's proxy has no version resource at all. What every build
+    /// of it carries is the name of its own settings file.
+    let private amdProxyMarker = Encoding.ASCII.GetBytes("dlssnr_on_amd")
+
+    let internal isAmdProxyFile (path: string) =
+        try
+            let info = FileInfo(path)
+
+            info.Exists
+            && info.Length > 0L
+            && info.Length < 96L * 1024L * 1024L
+            && (let bytes = File.ReadAllBytes(path)
+                MemoryExtensions.IndexOf(ReadOnlySpan<byte>(bytes), ReadOnlySpan<byte>(amdProxyMarker)) >= 0)
         with _ ->
             false
 
-    let private readManifest (game: GameItem) : InstallManifest option =
+    /// Is this file the given proxy? OptiScaler keeps its original filename in
+    /// the version resource whatever it is called; ReShade keeps its product name.
+    let internal isProxyOf (kind: ProxyKind) (path: string) =
+        try
+            match kind with
+            | AmdProxyDll -> isAmdProxyFile path
+            | _ ->
+                File.Exists(path)
+                && (let fvi = FileVersionInfo.GetVersionInfo(path)
+
+                    match kind with
+                    | OptiScalerProxyDll ->
+                        not (isNull fvi.OriginalFilename)
+                        && fvi.OriginalFilename.Equals("OptiScaler.dll", StringComparison.OrdinalIgnoreCase)
+                    | _ -> not (isNull fvi.ProductName) && fvi.ProductName.Contains("ReShade"))
+        with _ ->
+            false
+
+    /// Any of the proxies a rename could collide with.
+    let internal isAnyProxy (path: string) =
+        isProxyOf OptiScalerProxyDll path || isProxyOf ReShadeProxyDll path || isProxyOf AmdProxyDll path
+
+    let internal readManifest (game: GameItem) : InstallManifest option =
         try
             let path = recordPathFor game
 
@@ -1168,6 +1228,14 @@ module ModInstaller =
                  || String.Equals(Path.GetDirectoryName(path), exeDir, StringComparison.OrdinalIgnoreCase))
                 && not (name.StartsWith("nvngx", StringComparison.OrdinalIgnoreCase))
                 && not (name.StartsWith("sl.", StringComparison.OrdinalIgnoreCase))
+
+            // The AMD proxy is found by reading it whole, so only in a record
+            // the AMD route (or the advanced sheet's AMD part) wrote.
+            let amdRecord =
+                String.Equals(m.Mode, "amd", StringComparison.OrdinalIgnoreCase)
+                || m.Files |> Array.exists (fun f -> not (isNull (box f)) && String.Equals(f.Component, "amd", StringComparison.OrdinalIgnoreCase))
+
+            if kind = AmdProxyDll && not amdRecord then "" else
 
             m.Files
             |> Array.tryFind (fun f ->
@@ -1211,6 +1279,7 @@ module ModInstaller =
             match kind with
             | OptiScalerProxyDll -> "OptiScaler"
             | ReShadeProxyDll -> "ReShade"
+            | AmdProxyDll -> "The AMD payload"
 
         let newName = normalizeProxyName typedName
 
@@ -1236,7 +1305,7 @@ module ModInstaller =
                     elif File.Exists(target) && (files |> Array.exists (fun f -> same f.TargetPath target)) then
                         { Success = false
                           Message = sprintf "%s is already used by another file of this install - pick another name." newName }
-                    elif isProxyOf OptiScalerProxyDll target || isProxyOf ReShadeProxyDll target then
+                    elif isAnyProxy target then
                         { Success = false
                           Message = sprintf "%s is already another mod's proxy - pick another name." newName }
                     elif File.Exists(target) then
@@ -1266,7 +1335,7 @@ module ModInstaller =
                         // stays in the record, so removal treats it as it always did.
                         let backupIsProxy =
                             old.WasExisting
-                            && (isProxyOf OptiScalerProxyDll old.BackupPath || isProxyOf ReShadeProxyDll old.BackupPath)
+                            && isAnyProxy old.BackupPath
 
                         if old.WasExisting && not backupIsProxy && File.Exists(old.BackupPath) then
                             File.Copy(old.BackupPath, current, true)
@@ -1279,7 +1348,8 @@ module ModInstaller =
                             | _ ->
                                 { TargetPath = target
                                   BackupPath = backup
-                                  WasExisting = existed }
+                                  WasExisting = existed
+                                  Component = old.Component }
 
                         let keepOld (f: InstalledFile) = backupIsProxy && same f.TargetPath current
 
@@ -1315,6 +1385,8 @@ module ModInstaller =
     type ProxyNamesInfo =
         { OptiName: string
           ReShadeName: string
+          /// null in an entry kept before round 26: read again.
+          AmdName: string
           FolderDlls: string[]
           Stamp: int64 }
 
@@ -1356,10 +1428,12 @@ module ModInstaller =
     let private scanProxyNames (game: GameItem) (stamp: int64) : ProxyNamesInfo =
         let opti = installedProxyPath game OptiScalerProxyDll
         let reshade = installedProxyPath game ReShadeProxyDll
+        let amd = installedProxyPath game AmdProxyDll
 
         let dir =
             if opti <> "" then Path.GetDirectoryName(opti)
             elif reshade <> "" then Path.GetDirectoryName(reshade)
+            elif amd <> "" then Path.GetDirectoryName(amd)
             else ""
 
         let dlls =
@@ -1373,6 +1447,7 @@ module ModInstaller =
 
         { OptiName = (if opti = "" then "" else Path.GetFileName(opti))
           ReShadeName = (if reshade = "" then "" else Path.GetFileName(reshade))
+          AmdName = (if amd = "" then "" else Path.GetFileName(amd))
           FolderDlls = dlls
           Stamp = stamp }
 
@@ -1384,7 +1459,7 @@ module ModInstaller =
 
         lock proxyCacheLock (fun () ->
             match proxyCache.Value.TryGetValue(key) with
-            | true, v when v.Stamp = stamp -> Some v
+            | true, v when v.Stamp = stamp && not (isNull v.AmdName) -> Some v
             | _ -> None)
 
     /// Reads it from the disk and keeps it. Opens files - run it off the UI thread.
@@ -1393,7 +1468,7 @@ module ModInstaller =
 
         let info =
             if stamp = 0L then
-                { OptiName = ""; ReShadeName = ""; FolderDlls = [||]; Stamp = 0L }
+                { OptiName = ""; ReShadeName = ""; AmdName = ""; FolderDlls = [||]; Stamp = 0L }
             else
                 scanProxyNames game stamp
 
@@ -1803,8 +1878,13 @@ module ModInstaller =
             let isAmd = installedRoute.Equals("amd", StringComparison.OrdinalIgnoreCase)
 
             if isAmd then
-                if not (amdSlots |> Array.exists (fun n -> File.Exists(Path.Combine(exeDir, n)))) then
-                    missing.Add("AMD proxy library")
+                let hooked =
+                    amdSlots
+                    |> Array.exists (fun n -> File.Exists(Path.Combine(exeDir, n)))
+                    // A proxy the user renamed in the Manage sheet.
+                    || installedProxyPath game AmdProxyDll <> ""
+
+                if not hooked then missing.Add("AMD proxy library")
             elif isEmulator then
                 if not (File.Exists(Path.Combine(exeDir, feedAddonName))) then
                     missing.Add("DLSS 5 feed add-on")
@@ -1909,7 +1989,7 @@ module ModInstaller =
     /// True when this exact file is a ReShade build. Needed because ReShade can
     /// sit on a slot the shared detector does not look at - d3d9 on the DX9
     /// route, and dxgi once we have moved it there.
-    let private isReShadeFile (path: string) =
+    let internal isReShadeFile (path: string) =
         try
             File.Exists(path)
             && (let fvi = FileVersionInfo.GetVersionInfo(path)
@@ -1920,7 +2000,7 @@ module ModInstaller =
 
     /// True when this file is an OptiScaler proxy left over from an earlier
     /// install: the rename keeps the original filename in the version resource.
-    let private isOptiScalerProxy (path: string) =
+    let internal isOptiScalerProxy (path: string) =
         try
             File.Exists(path)
             && (let fvi = FileVersionInfo.GetVersionInfo(path)
@@ -1932,7 +2012,7 @@ module ModInstaller =
 
     /// Clears proxies a previous OptiScaler install left behind, so the new one
     /// cannot end up hooked twice under two different names.
-    let private clearStaleOptiScalerHooks (dir: string) : int =
+    let internal clearStaleOptiScalerHooks (dir: string) : int =
         let mutable cleared = 0
 
         for name in Array.append optiScalerSlots [| "OptiScaler.asi"; "Remove_OptiScaler.bat"; "Remove OptiScaler.bat" |] do
@@ -1954,7 +2034,7 @@ module ModInstaller =
     /// Picks the proxy name OptiScaler can take over without colliding with a
     /// file the game already ships - the same walk down the setup's own menu,
     /// starting from whichever slot suits the game's graphics API.
-    let private pickOptiScalerSlot (dir: string) (useVulkan: bool) : string =
+    let internal pickOptiScalerSlot (dir: string) (useVulkan: bool) : string =
         let order = if useVulkan then optiScalerSlotsVulkan else optiScalerSlots
 
         order
@@ -1967,7 +2047,7 @@ module ModInstaller =
     /// Drives the ReShade setup headless. It can take a while on a cold disk,
     /// so the elapsed time is reported the whole way through - a bar that never
     /// moves is indistinguishable from an app that has hung.
-    let private runReShadeSetup (setupExe: string) (gameExe: string) (api: string) (report: Progress) : bool * string =
+    let internal runReShadeSetup (setupExe: string) (gameExe: string) (api: string) (report: Progress) : bool * string =
         try
             let psi = ProcessStartInfo()
             psi.FileName <- setupExe
@@ -2010,7 +2090,7 @@ module ModInstaller =
     /// whole subtree behind - the neural upstream payload keeps its
     /// documentation and its build-time downloads next to its binaries, and
     /// neither belongs in someone's game folder.
-    let private copyTreeExcept (tracker: Tracker) (sourceDir: string) (targetDir: string) (skip: string[]) : int =
+    let internal copyTreeExcept (tracker: Tracker) (sourceDir: string) (targetDir: string) (skip: string[]) : int =
         let mutable count = 0
 
         if Directory.Exists(sourceDir) then
@@ -2036,7 +2116,7 @@ module ModInstaller =
 
         count
 
-    let private copyTree (tracker: Tracker) (sourceDir: string) (targetDir: string) : int =
+    let internal copyTree (tracker: Tracker) (sourceDir: string) (targetDir: string) : int =
         copyTreeExcept tracker sourceDir targetDir [||]
 
     /// The ReShade setup exposes no command line switch for its effect
@@ -2044,7 +2124,7 @@ module ModInstaller =
     /// headless run can do. We deploy the very same package ourselves - the
     /// utility effects (DisplayDepth, UIMask, ...) bundled under
     /// "mod files\reshade-shaders" - and point ReShade.ini at it.
-    let private ensureStandardEffectPaths (tracker: Tracker) (exeDir: string) : string * int =
+    let internal ensureStandardEffectPaths (tracker: Tracker) (exeDir: string) : string * int =
         let shadersRoot = Path.Combine(exeDir, reshadeShadersDirName)
         Directory.CreateDirectory(Path.Combine(shadersRoot, "Shaders")) |> ignore
         Directory.CreateDirectory(Path.Combine(shadersRoot, "Textures")) |> ignore
@@ -2112,7 +2192,7 @@ module ModInstaller =
     /// The settings file goes through the tracker like any other file, so a
     /// user who had already tuned the overlay by hand gets that copy backed up
     /// and handed back on removal.
-    let private deployOverlay
+    let internal deployOverlay
         (tracker: Tracker)
         (exeDir: string)
         (modRoot: string)
@@ -2180,7 +2260,7 @@ module ModInstaller =
     /// beside the game. Anything switched off is skipped, and a source that
     /// has since been moved or deleted is passed over rather than failing the
     /// install that was otherwise fine.
-    let private deployExtras
+    let internal deployExtras
         (tracker: Tracker)
         (exeDir: string)
         (mode: InstallMode)
@@ -2482,6 +2562,15 @@ module ModInstaller =
                       Multipass = (if multipassWanted then "1" else "")
                       DeepFried = (if deepFriedWanted || deepFriedHost64 then "1" else "")
                       EmuApi = (if mode = Emulator then optiApiKey optiApi else "")
+                      // What this install writes is a one-click install, so
+                      // it is never locked. A file an earlier advanced run
+                      // tagged can still be in the record; "0" says in so many
+                      // words that it is open to the one-click sheet. A record
+                      // with no tag at all stays exactly as it always was.
+                      Advanced =
+                        (if tracker.Entries |> Array.exists (fun e -> not (String.IsNullOrWhiteSpace(e.Component))) then "0"
+                         else null)
+                      EasyBase = null
                       Files = tracker.Entries }
 
                 let options = JsonSerializerOptions()

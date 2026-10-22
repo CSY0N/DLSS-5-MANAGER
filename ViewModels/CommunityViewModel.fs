@@ -459,6 +459,24 @@ type CommunityReportViewModel(dto: CommunityApi.ReportDto) =
     member _.HasNeural = dto.Neural
     member _.HasOverlay = dto.Overlay
 
+    /// Installed or changed with the advanced install: the card says so, and
+    /// lists the parts it was made of in the words the app uses for them.
+    member _.IsAdvanced = dto.Advanced
+
+    member _.PartNames =
+        if isNull (box dto.Parts) then [||]
+        else dto.Parts |> Array.filter (fun p -> not (String.IsNullOrWhiteSpace(p))) |> Array.map Localization.current.AdvPartName
+
+    member this.HasParts = dto.Advanced && this.PartNames.Length > 0
+
+    /// The poster put files of their own in with it.
+    member _.HasExtra = dto.Extra
+
+    /// "Mixed" and "did not work" are not offered on an advanced install:
+    /// with any part picked by hand, a result says more about the pick than
+    /// about the game. The server refuses them as well.
+    member _.CanChangeToMixedOrBroken = not dto.Advanced
+
     /// The hardware chips only exist when the poster chose to attach them.
     member _.Gpu = dto.Gpu
     member _.Driver = dto.Driver
@@ -680,6 +698,14 @@ type CommunityViewModel() =
     let mutable composeArch = "64"
     let mutable composeNeural = false
     let mutable composeOverlay = false
+
+    /// The game's install carries changes made in the advanced sheet: the post
+    /// says so, lists its parts, and can only say the game works.
+    let mutable composeAdvanced = false
+    let mutable composeParts: string[] = [||]
+
+    /// Files of the user's own are in the install: the post says EXTRA.
+    let mutable composeExtra = false
     let mutable composeTarget = "executable"
     let mutable composeBody = ""
     let mutable specs: SystemSpecs.Specs option = None
@@ -1211,7 +1237,7 @@ type CommunityViewModel() =
     /// specs attached become a "did not work" one, which is the same condition
     /// it applied when the report was posted.
     member this.EditOwnStatus(report: CommunityReportViewModel, status: string) =
-        if report.IsMine && report.Status <> status then
+        if report.IsMine && report.Status <> status && (status = "working" || not report.IsAdvanced) then
             this.Run(fun () ->
                 match CommunityApi.editOwnReport report.Id status with
                 | Error e -> Error e
@@ -1359,6 +1385,12 @@ type CommunityViewModel() =
     member _.IsStatusWorking = composeStatus = "working"
     member _.IsStatusMixed = composeStatus = "mixed"
     member _.IsStatusBroken = composeStatus = "broken"
+
+    member _.IsComposeAdvanced = composeAdvanced
+    member _.CanComposeMixedOrBroken = not composeAdvanced
+    member _.ComposePartNames = composeParts |> Array.map Localization.current.AdvPartName
+    member _.HasComposeParts = composeAdvanced && composeParts.Length > 0
+    member _.IsComposeExtra = composeExtra
     member _.ComposeRouteLabel = CommunityShared.routeLabel composeRoute composeApi composeArch
     member _.ComposeTargetLabel = if composeTarget = "title" then "TITLE" else "EXECUTABLE"
 
@@ -1394,7 +1426,8 @@ type CommunityViewModel() =
             this.RaisePropertyChanged(name)
 
     member this.SetComposeStatus(value: string) =
-        composeStatus <- value
+        // An advanced install is shared as working, or not at all.
+        composeStatus <- (if composeAdvanced then "working" else value)
         for name in [ "IsStatusWorking"; "IsStatusMixed"; "IsStatusBroken" ] do
             this.RaisePropertyChanged(name)
 
@@ -1408,7 +1441,10 @@ type CommunityViewModel() =
             pickedRoute: string,
             pickedApi: string,
             pickedArch: string,
-            pickedNeural: bool
+            pickedNeural: bool,
+            advancedInstall: bool,
+            parts: string[],
+            hasExtra: bool
         ) =
         composeTitle <- game.Title
         composeSteamId <-
@@ -1428,6 +1464,9 @@ type CommunityViewModel() =
         composeApi <- (if hasManifest then ModInstaller.installedOptiApi game else pickedApi)
         composeNeural <- (if hasManifest then ModInstaller.installedNeuralAddon game else pickedNeural)
         composeOverlay <- overlayOn
+        composeAdvanced <- advancedInstall
+        composeParts <- (if isNull parts then [||] else parts)
+        composeExtra <- hasExtra
         composeTarget <- (if String.IsNullOrWhiteSpace(game.TargetExecutablePath) then "title" else "executable")
         composeStatus <- "working"
         composeBody <- ""
@@ -1437,7 +1476,8 @@ type CommunityViewModel() =
 
         for name in
             [ "IsComposerOpen"; "ComposeTitle"; "ComposeRouteLabel"; "ComposeTargetLabel"; "ComposeBody"
-              "IsStatusWorking"; "IsStatusMixed"; "IsStatusBroken"; "HasSpecs"; "StatusMessage"; "HasStatusMessage" ] do
+              "IsStatusWorking"; "IsStatusMixed"; "IsStatusBroken"; "HasSpecs"; "StatusMessage"; "HasStatusMessage"
+              "IsComposeAdvanced"; "CanComposeMixedOrBroken"; "ComposePartNames"; "HasComposeParts"; "IsComposeExtra" ] do
             this.RaisePropertyChanged(name)
 
     member this.CloseComposer() =
@@ -1460,12 +1500,15 @@ type CommunityViewModel() =
             let draft: CommunityApi.ReportDraft =
                 { Title = composeTitle
                   SteamAppId = composeSteamId
-                  Status = composeStatus
+                  Status = (if composeAdvanced then "working" else composeStatus)
                   Route = composeRoute
                   Api = (if composeRoute = "optiscaler" then composeApi else "")
                   Arch = composeArch
                   Neural = composeNeural
                   Overlay = composeOverlay
+                  Advanced = composeAdvanced
+                  Parts = (if composeAdvanced then composeParts else [||])
+                  Extra = composeExtra
                   Target = composeTarget
                   Body = composeBody
                   Specs = specs }

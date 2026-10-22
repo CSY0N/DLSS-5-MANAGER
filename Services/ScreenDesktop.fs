@@ -28,6 +28,8 @@ module ScreenDesktop =
     extern uint32 GetCurrentThreadId()
     [<DllImport("user32.dll")>]
     extern bool IsWindow(nativeint hwnd)
+    [<DllImport("user32.dll", CharSet = CharSet.Unicode)>]
+    extern nativeint FindWindowW(string className, string windowName)
     [<DllImport("user32.dll")>]
     extern bool ShowWindow(nativeint hwnd, int command)
     [<DllImport("user32.dll")>]
@@ -65,6 +67,15 @@ module ScreenDesktop =
             SetWindowDisplayAffinity(hwnd, 0x11u) |> ignore
 #endif
 
+    /// Clicks through the window (the counter at rest) or onto it (the counter
+    /// while the overlay is open, so it can be dragged). WS_EX_TRANSPARENT only;
+    /// everything else makeGhost set stays.
+    let setClickThrough (hwnd: nativeint) (through: bool) =
+        if hwnd <> 0n && IsWindow(hwnd) then
+            let style = GetWindowLongPtr(hwnd, -20)
+            let next = if through then style ||| 0x20n else style &&& ~~~0x20n
+            if next <> style then SetWindowLongPtr(hwnd, -20, next) |> ignore
+
     /// Puts a window back on top without moving, resizing or focusing it.
     ///
     /// `Topmost` is a request Windows grants once. A game going exclusive
@@ -82,6 +93,10 @@ module ScreenDesktop =
         if not (IsWindow(hwnd)) then failwith "The selected window has closed. Refresh the source list."
         if IsIconic(hwnd) then ShowWindow(hwnd, 9) |> ignore
         if not (SetForegroundWindow(hwnd)) then failwith "Windows could not activate this app. Select it from the taskbar."
+
+    /// Whether the taskbar - and with it the place beside the clock - is up.
+    /// At sign-in a program can be running before it is.
+    let taskbarReady () = FindWindowW("Shell_TrayWnd", null) <> 0n
 
     /// One global shortcut. Modifiers use RegisterHotKey's own bits (Alt 1,
     /// Ctrl 2, Shift 4, Win 8); the key is a Windows virtual-key code.

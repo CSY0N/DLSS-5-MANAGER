@@ -32,7 +32,10 @@
 //                    without the overshoot rims plain unsharp masking draws.
 //                    Held back on the edges step 2 just straightened, and in
 //                    fast motion, where sharpening only draws crawling edges
-//                    on what the eye cannot follow anyway.
+//                    on what the eye cannot follow anyway. Then a clarity
+//                    lift a little wider than a pixel, on the luma and held
+//                    to the neighbourhood's range, which is what makes the
+//                    slider visible on a high-resolution screen.
 //   5. Colours       brightness (a midtone curve: black and white stay put),
 //                    contrast (an S-curve around mid-grey), saturation (gentler
 //                    on colours that are already strong) and warmth (towards
@@ -123,7 +126,10 @@ void CSMain(uint3 id : SV_DispatchThreadID)
         float2 prev = float2(p) + 0.5f + mv;
         if (all(prev >= 0.0f) && all(prev <= size))
         {
-            float3 h = gHist.SampleLevel(gLin, prev / size, 0).rgb;
+            // Under three quarters of a pixel the vector is the estimate's
+            // noise, not motion: the history is read where it is. Read a
+            // fraction of a pixel off, it made still places waver.
+            float3 h = speed < 0.75f ? gHist[p].rgb : gHist.SampleLevel(gLin, prev / size, 0).rgb;
             float3 held = clamp(h, mn, mx);
             // A history that needed a lot of clamping was the wrong place;
             // a fast mover has too little of it left to trust.
@@ -180,8 +186,30 @@ void CSMain(uint3 id : SV_DispatchThreadID)
         float peak = -1.0f / lerp(8.0f, 5.0f, gSharp);
         float3 wgt = amp * peak;
         float3 cas = saturate((aa + (n + s + e + w) * wgt) / (1.0f + 4.0f * wgt));
-        float keep = lerp(1.0f, 0.45f, saturate((speed - 2.0f) / 22.0f)) * (1.0f - edgeAmount);
+        // Round 23: edge smoothing only halves it on its edges now (it used to
+        // take it all), and fast motion keeps more of it.
+        float keep = lerp(1.0f, 0.6f, saturate((speed - 2.0f) / 22.0f)) * (1.0f - 0.5f * edgeAmount);
         result = lerp(aa, cas, keep);
+
+        // Clarity (round 23): CAS alone works on one pixel, which on a 1440p
+        // screen is too fine to see - "no difference" at 100%. This lifts the
+        // detail a little wider than a pixel (the picture against a blur of
+        // radius 1.5) on the luma, held inside the neighbourhood's own range
+        // so no bright or dark rim appears.
+        float2 texel = 1.0f / size;
+        float2 uv = (float2(p) + 0.5f) * texel;
+        float3 blur = 0.0f;
+        [unroll] for (int k = 0; k < 8; ++k)
+        {
+            float2 o = k < 4 ? float2(k & 1 ? 1.5f : -1.5f, k & 2 ? 1.5f : -1.5f)
+                             : float2(k == 4 ? 1.5f : (k == 5 ? -1.5f : 0.0f), k == 6 ? 1.5f : (k == 7 ? -1.5f : 0.0f));
+            blur += gSrc.SampleLevel(gLin, uv + o * texel, 0).rgb;
+        }
+        blur *= 0.125f;
+        float lr = L(result);
+        float lifted = lr + gSharp * 1.25f * keep * (lr - L(blur));
+        lifted = clamp(lifted, L(mnc) - 0.03f, L(mxc) + 0.03f);
+        result = saturate(result + (lifted - lr));
     }
 
     // 5. Colours.
@@ -195,7 +223,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 // the runtime since 310.8.0 and read by nothing in this worker - one byte
 // each around 128, lowest byte brightness; RESIZE_FLAG_COLORS in the flags
 // says the slot means something, so an older client's zero there can never
-// read as "everything at -1". NS_COLORS (the same word, hex) is what a worker
+// read as "everything at -1". LF_COLORS (the same word, hex) is what a worker
 // started before any resize reads.
 static constexpr uint32_t RESIZE_FLAG_COLORS = 0x10000u;
 static float g_colors[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -216,12 +244,12 @@ static void ReadColorsOnce()
     if (g_colors_read) return;
     g_colors_read = true;
     char buf[16] = {};
-    const DWORD got = GetEnvironmentVariableA("NS_COLORS", buf, sizeof(buf));
+    const DWORD got = GetEnvironmentVariableA("LF_COLORS", buf, sizeof(buf));
     if (got > 0 && got < sizeof(buf))
     {
         ColorsFromWord(static_cast<uint32_t>(strtoul(buf, nullptr, 16)));
         if (g_colors[0] != 0.0f || g_colors[1] != 0.0f || g_colors[2] != 0.0f || g_colors[3] != 0.0f)
-            Log("[colors] brightness %+.2f, contrast %+.2f, saturation %+.2f, warmth %+.2f from NS_COLORS",
+            Trace("[colors] brightness %+.2f, contrast %+.2f, saturation %+.2f, warmth %+.2f from LF_COLORS",
                 g_colors[0], g_colors[1], g_colors[2], g_colors[3]);
     }
 }
@@ -240,7 +268,7 @@ static void ColorsFromResize(uint32_t flags, uint32_t word)
     memcpy(before, g_colors, sizeof(before));
     ColorsFromWord(word);
     if (memcmp(before, g_colors, sizeof(before)) != 0)
-        Log("[colors] brightness %+.2f, contrast %+.2f, saturation %+.2f, warmth %+.2f",
+        Trace("[colors] brightness %+.2f, contrast %+.2f, saturation %+.2f, warmth %+.2f",
             g_colors[0], g_colors[1], g_colors[2], g_colors[3]);
 }
 
@@ -280,17 +308,17 @@ static bool EnsureFinishPipeline()
     if (g_finish_failed) return false;
     g_finish_failed = true;
     HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
-    auto compile = compiler ? reinterpret_cast<PFN_D3DCompile_>(GetProcAddress(compiler, "D3DCompile")) : nullptr;
+    auto compile = compiler ? static_cast<CompileFn>(&CachedCompile) : nullptr;
     HMODULE d3d12 = GetModuleHandleW(L"d3d12.dll");
-    auto serialize = d3d12 ? reinterpret_cast<PFN_D3D12SerializeRootSignature_>(
+    auto serialize = d3d12 ? reinterpret_cast<SerializeRootFn>(
                                  GetProcAddress(d3d12, "D3D12SerializeRootSignature")) : nullptr;
-    if (compile == nullptr || serialize == nullptr) { Log("[finish] compiler unavailable"); return false; }
+    if (compile == nullptr || serialize == nullptr) { Trace("[finish] compiler unavailable"); return false; }
     ID3DBlob *code = nullptr, *errors = nullptr;
     HRESULT hr = compile(kFinishHlsl, sizeof(kFinishHlsl) - 1, "finish.hlsl", nullptr, nullptr,
                          "CSMain", "cs_5_0", 0, 0, &code, &errors);
     if (FAILED(hr) || code == nullptr)
     {
-        Log("[finish] shader failed 0x%08X: %s", hr,
+        Trace("[finish] shader failed 0x%08X: %s", hr,
             errors ? static_cast<const char *>(errors->GetBufferPointer()) : "(no log)");
         if (errors) errors->Release();
         return false;
@@ -323,8 +351,8 @@ static bool EnsureFinishPipeline()
     ID3DBlob *rs_blob = nullptr;
     hr = serialize(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &rs_blob, &errors);
     if (errors) errors->Release();
-    if (FAILED(hr) || rs_blob == nullptr) { Log("[finish] root signature failed 0x%08X", hr); code->Release(); return false; }
-    hr = h.dev->CreateRootSignature(0, rs_blob->GetBufferPointer(), rs_blob->GetBufferSize(),
+    if (FAILED(hr) || rs_blob == nullptr) { Trace("[finish] root signature failed 0x%08X", hr); code->Release(); return false; }
+    hr = lfCore.device->CreateRootSignature(0, rs_blob->GetBufferPointer(), rs_blob->GetBufferSize(),
                                     __uuidof(ID3D12RootSignature), reinterpret_cast<void **>(&g_finish_rs));
     rs_blob->Release();
     if (FAILED(hr)) { code->Release(); return false; }
@@ -332,17 +360,17 @@ static bool EnsureFinishPipeline()
     pd.pRootSignature = g_finish_rs;
     pd.CS.pShaderBytecode = code->GetBufferPointer();
     pd.CS.BytecodeLength = code->GetBufferSize();
-    hr = h.dev->CreateComputePipelineState(&pd, __uuidof(ID3D12PipelineState), reinterpret_cast<void **>(&g_finish_pso));
+    hr = lfCore.device->CreateComputePipelineState(&pd, __uuidof(ID3D12PipelineState), reinterpret_cast<void **>(&g_finish_pso));
     code->Release();
-    if (FAILED(hr)) { Log("[finish] pipeline failed 0x%08X", hr); return false; }
+    if (FAILED(hr)) { Trace("[finish] pipeline failed 0x%08X", hr); return false; }
     D3D12_DESCRIPTOR_HEAP_DESC hd = {};
     hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     hd.NumDescriptors = 10;
     hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    if (FAILED(h.dev->CreateDescriptorHeap(&hd, __uuidof(ID3D12DescriptorHeap), reinterpret_cast<void **>(&g_finish_heap))))
+    if (FAILED(lfCore.device->CreateDescriptorHeap(&hd, __uuidof(ID3D12DescriptorHeap), reinterpret_cast<void **>(&g_finish_heap))))
         return false;
     g_finish_failed = false;
-    Log("[finish] pipeline ready (motion-aware stability, edge smoothing, CAS sharpening, colours)");
+    Trace("[finish] pipeline ready (motion-aware stability, edge smoothing, CAS sharpening, colours)");
     return true;
 }
 
@@ -357,7 +385,7 @@ static ID3D12Resource *MakeFinishTexture(UINT w, UINT hgt, bool uav)
     td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     if (uav) td.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     ID3D12Resource *r = nullptr;
-    if (FAILED(h.dev->CreateCommittedResource(&def, D3D12_HEAP_FLAG_NONE, &td,
+    if (FAILED(lfCore.device->CreateCommittedResource(&def, D3D12_HEAP_FLAG_NONE, &td,
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr, __uuidof(ID3D12Resource),
             reinterpret_cast<void **>(&r))))
         return nullptr;
@@ -374,7 +402,7 @@ static bool EnsureFinishTargets(UINT w, UINT hgt)
     g_finish_hist[0] = MakeFinishTexture(w, hgt, true);
     g_finish_hist[1] = MakeFinishTexture(w, hgt, true);
     if (g_finish_tmp == nullptr || g_finish_hist[0] == nullptr || g_finish_hist[1] == nullptr)
-    { Log("[finish] %ux%u targets failed", w, hgt); CloseFinishTargets(); return false; }
+    { Trace("[finish] %ux%u targets failed", w, hgt); CloseFinishTargets(); return false; }
     g_finish_w = w;
     g_finish_h = hgt;
     return true;
@@ -384,7 +412,7 @@ static void BindFinishSet(UINT set, ID3D12Resource *mv, ID3D12Resource *output)
 {
     ID3D12Resource *want[5] = { g_finish_tmp, mv, g_finish_hist[set], output, g_finish_hist[1 - set] };
     if (memcmp(g_finish_bound[set], want, sizeof(want)) == 0) return;
-    const UINT stride = h.dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    const UINT stride = lfCore.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     D3D12_CPU_DESCRIPTOR_HANDLE cpu = g_finish_heap->GetCPUDescriptorHandleForHeapStart();
     cpu.ptr += static_cast<SIZE_T>(set) * 5 * stride;
     D3D12_SHADER_RESOURCE_VIEW_DESC sd = {};
@@ -392,22 +420,22 @@ static void BindFinishSet(UINT set, ID3D12Resource *mv, ID3D12Resource *output)
     sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     sd.Texture2D.MipLevels = 1;
     sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    h.dev->CreateShaderResourceView(g_finish_tmp, &sd, cpu);
+    lfCore.device->CreateShaderResourceView(g_finish_tmp, &sd, cpu);
     cpu.ptr += stride;
     // A null view when there is no motion texture: the shader then reads
     // zero motion, which is "nothing moved" - never wrong, only weaker.
     sd.Format = DXGI_FORMAT_R16G16_FLOAT;
-    h.dev->CreateShaderResourceView(mv, &sd, cpu);
+    lfCore.device->CreateShaderResourceView(mv, &sd, cpu);
     cpu.ptr += stride;
     sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    h.dev->CreateShaderResourceView(g_finish_hist[set], &sd, cpu);
+    lfCore.device->CreateShaderResourceView(g_finish_hist[set], &sd, cpu);
     cpu.ptr += stride;
     D3D12_UNORDERED_ACCESS_VIEW_DESC ud = {};
     ud.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     ud.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    h.dev->CreateUnorderedAccessView(output, nullptr, &ud, cpu);
+    lfCore.device->CreateUnorderedAccessView(output, nullptr, &ud, cpu);
     cpu.ptr += stride;
-    h.dev->CreateUnorderedAccessView(g_finish_hist[1 - set], nullptr, &ud, cpu);
+    lfCore.device->CreateUnorderedAccessView(g_finish_hist[1 - set], nullptr, &ud, cpu);
     memcpy(g_finish_bound[set], want, sizeof(want));
 }
 
@@ -422,22 +450,22 @@ static void FinishOutput(ID3D12Resource *output, UINT w, UINT hgt, float sharp, 
     const UINT set = g_finish_ping;          // history[set] is last frame's
     ID3D12Resource *next = g_finish_hist[1 - set];
     D3D12_RESOURCE_BARRIER pre[] = {
-        Transition(output, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE),
-        Transition(g_finish_tmp, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST),
+        Barrier(output, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE),
+        Barrier(g_finish_tmp, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST),
     };
-    h.list->ResourceBarrier(_countof(pre), pre);
-    h.list->CopyResource(g_finish_tmp, output);
+    lfCore.cmd->ResourceBarrier(_countof(pre), pre);
+    lfCore.cmd->CopyResource(g_finish_tmp, output);
     D3D12_RESOURCE_BARRIER mid[] = {
-        Transition(output, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
-        Transition(g_finish_tmp, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-        Transition(next, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        Barrier(output, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+        Barrier(g_finish_tmp, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+        Barrier(next, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
     };
-    h.list->ResourceBarrier(_countof(mid), mid);
+    lfCore.cmd->ResourceBarrier(_countof(mid), mid);
     BindFinishSet(set, mv, output);
     ID3D12DescriptorHeap *heaps[] = { g_finish_heap };
-    h.list->SetDescriptorHeaps(1, heaps);
-    h.list->SetComputeRootSignature(g_finish_rs);
-    h.list->SetPipelineState(g_finish_pso);
+    lfCore.cmd->SetDescriptorHeaps(1, heaps);
+    lfCore.cmd->SetComputeRootSignature(g_finish_rs);
+    lfCore.cmd->SetPipelineState(g_finish_pso);
     const bool colors = ColorsActive();
     const UINT flags = ((g_finish_hist_valid && !reset) ? 1u : 0u) | (colors ? 2u : 0u);
     UINT32 c[12] = { w, hgt, 0, 0, mv != nullptr ? mv_w : 0u, mv != nullptr ? mv_h : 0u, flags, 0, 0, 0, 0, 0 };
@@ -447,15 +475,15 @@ static void FinishOutput(ID3D12Resource *output, UINT w, UINT hgt, float sharp, 
     memcpy(&c[8], &g_colors[1], sizeof(float));
     memcpy(&c[9], &g_colors[2], sizeof(float));
     memcpy(&c[10], &g_colors[3], sizeof(float));
-    h.list->SetComputeRoot32BitConstants(0, 12, c, 0);
+    lfCore.cmd->SetComputeRoot32BitConstants(0, 12, c, 0);
     D3D12_GPU_DESCRIPTOR_HANDLE gpu = g_finish_heap->GetGPUDescriptorHandleForHeapStart();
     gpu.ptr += static_cast<UINT64>(set) * 5 *
-               h.dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    h.list->SetComputeRootDescriptorTable(1, gpu);
-    h.list->Dispatch((w + 7) / 8, (hgt + 7) / 8, 1);
-    D3D12_RESOURCE_BARRIER post = Transition(next, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+               lfCore.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    lfCore.cmd->SetComputeRootDescriptorTable(1, gpu);
+    lfCore.cmd->Dispatch((w + 7) / 8, (hgt + 7) / 8, 1);
+    D3D12_RESOURCE_BARRIER post = Barrier(next, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                                              D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    h.list->ResourceBarrier(1, &post);
+    lfCore.cmd->ResourceBarrier(1, &post);
     // The pass wrote history[1 - set]; next frame reads it.
     g_finish_ping = 1 - set;
     g_finish_hist_valid = true;

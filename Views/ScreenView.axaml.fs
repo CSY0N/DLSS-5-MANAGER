@@ -39,6 +39,8 @@ type ScreenView() as this =
     // The ids RegisterHotKey knows the two shortcuts by.
     let overlayHotkeyId = 0x5D51
     let dlssHotkeyId = 0x5D52
+    let shotHotkeyId = 0x5D53
+    let recordHotkeyId = 0x5D54
 
     /// Avalonia's key to the Windows virtual-key code RegisterHotKey wants.
     /// Letters, digits, the number pad and F1-F24 - everything a shortcut is
@@ -60,73 +62,45 @@ type ScreenView() as this =
     let vm () = this.DataContext :?> ScreenViewModel
 
     // ---- FPS counter -------------------------------------------------------
-    // One small window at the top-left of the output screen, owned by the
-    // section's own view (never the overlay's copy of it). Shown while the
-    // counter is on and a session is sending frames.
+    // The counter is drawn by the worker into the frame itself (round 28): a
+    // window kept on top of the output made the compositor blend the two for
+    // every frame. This small window is only its stand-in while the overlay
+    // is open, so the counter can be dragged to another place; owned by the
+    // section's own view (never the overlay's copy of it).
     let mutable counter: Window option = None
     let mutable counterWired = false
+    /// True while the overlay is open: the counter takes clicks then, and can
+    /// be dragged. At any other time clicks go through it to the game.
+    let mutable counterMovable = false
     let counterTimer = DispatcherTimer(Interval = TimeSpan.FromMilliseconds(500.))
 
     let buildCounter (v: ScreenViewModel) =
-        let number (path: string) (colour: string) =
+        // MFG SUPER MOTION's look, as the worker and SMFG's engine draw it in the
+        // frame (lf_counter.inl): "95" or "95/380", white with a thin dark edge.
+        let figures (colour: IBrush) (dx: float) (dy: float) =
             let t =
                 TextBlock(
-                    FontSize = 26.,
-                    FontWeight = FontWeight.Bold,
-                    Foreground = SolidColorBrush(Color.Parse(colour)),
-                    HorizontalAlignment = Layout.HorizontalAlignment.Left
+                    FontFamily = FontFamily("Segoe UI"),
+                    FontSize = 24.,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = colour,
+                    Margin = Thickness(2. + dx, 2. + dy, 2. - dx, 2. - dy)
                 )
 
-            t.Bind(TextBlock.TextProperty, Binding(path)) |> ignore
+            t.Bind(TextBlock.TextProperty, Binding("CounterText")) |> ignore
             t
 
-        let caption (path: string) (colour: string) =
-            let t =
-                TextBlock(
-                    FontSize = 9.5,
-                    FontWeight = FontWeight.Bold,
-                    LetterSpacing = 1.2,
-                    Margin = Thickness(1., -3., 0., 0.),
-                    Foreground = SolidColorBrush(Color.Parse(colour))
-                )
+        let stack = Grid()
+        for dx, dy in [ -2., 0.; 2., 0.; 0., -2.; 0., 2.; -1.5, -1.5; 1.5, -1.5; -1.5, 1.5; 1.5, 1.5 ] do
+            stack.Children.Add(figures (SolidColorBrush(Color.FromArgb(217uy, 0uy, 0uy, 0uy))) dx dy)
+        stack.Children.Add(figures Brushes.White 0. 0.)
 
-            t.Bind(TextBlock.TextProperty, Binding(path)) |> ignore
-            t
-
-        let column (children: Control list) =
-            let s = StackPanel(VerticalAlignment = Layout.VerticalAlignment.Center)
-            for c in children do s.Children.Add(c)
-            s
-
-        let baseColumn = column [ number "CounterBaseText" "#FFFFFF"; caption "CounterBaseLabel" "#94A3B8" ]
-
-        let arrow =
-            TextBlock(
-                Text = "\u2192",
-                FontSize = 20.,
-                Foreground = SolidColorBrush(Color.Parse("#64748B")),
-                VerticalAlignment = Layout.VerticalAlignment.Center,
-                Margin = Thickness(0., -8., 0., 0.)
-            )
-
-        arrow.Bind(Visual.IsVisibleProperty, Binding("HasCounterOut")) |> ignore
-
-        let outColumn = column [ number "CounterOutText" "#7CFFC4"; caption "CounterModeText" "#34D399" ]
-        outColumn.Bind(Visual.IsVisibleProperty, Binding("HasCounterOut")) |> ignore
-
-        let row = StackPanel(Orientation = Layout.Orientation.Horizontal, Spacing = 12.)
-        row.Children.Add(baseColumn)
-        row.Children.Add(arrow)
-        row.Children.Add(outColumn)
-
+        // Nearly clear, so it can still be taken hold of and dragged.
         let pill =
             Border(
-                Background = SolidColorBrush(Color.Parse("#FF0B1214")),
-                BorderBrush = SolidColorBrush(Color.Parse("#5500FF88")),
-                BorderThickness = Thickness(1.),
-                CornerRadius = CornerRadius(12.),
-                Padding = Thickness(14., 5., 14., 7.),
-                Child = row
+                Name = "CounterPill",
+                Background = SolidColorBrush(Color.Parse("#01000000")),
+                Child = stack
             )
 
         let window =
@@ -154,6 +128,17 @@ type ScreenView() as this =
                 ScreenDesktop.makeGhost handle.Handle
                 ScreenDesktop.keepOnTop handle.Handle)
 
+        // Movable only while it takes clicks (the overlay is open - see
+        // setCounterMovable): press and drag, and it stays where it is let go.
+        pill.PointerPressed.Add(fun e ->
+            if counterMovable && e.GetCurrentPoint(pill).Properties.IsLeftButtonPressed then
+                window.BeginMoveDrag(e))
+
+        window.PositionChanged.Add(fun _ ->
+            if counterMovable then
+                let (x, y, _, _) = v.CounterArea
+                v.MoveCounter(window.Position.X - x, window.Position.Y - y))
+
         window
 
     /// Up, placed and on top while it should show; hidden otherwise.
@@ -166,11 +151,15 @@ type ScreenView() as this =
                 | None ->
                     let w = buildCounter v
                     counter <- Some w
+                    // A new window starts click-through; the next tick makes it
+                    // movable again if the overlay is open.
+                    counterMovable <- false
                     w
 
             let (x, y, _, _) = v.CounterArea
-            let at = PixelPoint(x + 20, y + 20)
-            if window.Position <> at then window.Position <- at
+            let (dx, dy) = v.CounterOffset
+            let at = PixelPoint(x + dx, y + dy)
+            if window.Position <> at && not counterMovable then window.Position <- at
 
             if not window.IsVisible then
                 window.Show()
@@ -179,24 +168,162 @@ type ScreenView() as this =
                 if not (isNull handle) then ScreenDesktop.keepOnTop handle.Handle
         | _ -> counter |> Option.iter (fun w -> if w.IsVisible then w.Hide())
 
+    // ---- FLOW VIEW legend -----------------------------------------------------
+    // What the colours mean, at the top-right of the output screen while FLOW
+    // VIEW is on. Seen, never touched or captured - the same ghost as the counter.
+    let mutable legend: Window option = None
+
+    let buildLegend (v: ScreenViewModel) =
+        let text (path: string) (size: float) (colour: string) (bold: bool) =
+            let t =
+                TextBlock(
+                    FontSize = size,
+                    FontWeight = (if bold then FontWeight.Bold else FontWeight.Normal),
+                    Foreground = SolidColorBrush(Color.Parse(colour)),
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 250.,
+                    VerticalAlignment = Layout.VerticalAlignment.Center
+                )
+
+            t.Bind(TextBlock.TextProperty, Binding(path)) |> ignore
+            t
+
+        let row (swatch: Control) (path: string) =
+            let g = Grid(ColumnDefinitions = ColumnDefinitions("Auto,*"), ColumnSpacing = 10.)
+            Grid.SetColumn(swatch, 0)
+            let t = text path 11.5 "#E2E8F0" false
+            Grid.SetColumn(t, 1)
+            g.Children.Add(swatch)
+            g.Children.Add(t)
+            g
+
+        let square (colour: string) =
+            Border(Width = 18., Height = 12., CornerRadius = CornerRadius(3.),
+                   Background = SolidColorBrush(Color.Parse(colour)), VerticalAlignment = Layout.VerticalAlignment.Center)
+
+        // The motion's colour wheel, flattened: each colour is one direction.
+        let wheel =
+            let stops = GradientStops()
+            for (offset, colour) in [ 0.0, "#FF3030"; 0.17, "#FFD000"; 0.33, "#40E040"; 0.5, "#20E0E0"
+                                      0.67, "#3060FF"; 0.83, "#D040FF"; 1.0, "#FF3030" ] do
+                stops.Add(GradientStop(Color.Parse(colour), offset))
+
+            Border(Width = 18., Height = 12., CornerRadius = CornerRadius(3.),
+                   Background = LinearGradientBrush(GradientStops = stops, StartPoint = RelativePoint(0., 0.5, RelativeUnit.Relative),
+                                                    EndPoint = RelativePoint(1., 0.5, RelativeUnit.Relative)),
+                   VerticalAlignment = Layout.VerticalAlignment.Center)
+
+        let rows = StackPanel(Spacing = 7.)
+        rows.Children.Add(text "Loc.LfFlowView" 12.5 "#FFFFFF" true)
+        rows.Children.Add(row wheel "Loc.LfViewMotion")
+        rows.Children.Add(row (square "#FFE01A") "Loc.LfViewCorrected")
+        rows.Children.Add(row (square "#FF26D9") "Loc.LfViewHud")
+        rows.Children.Add(row (square "#9959FF") "Loc.LfViewPanel")
+
+        let window =
+            Window(
+                Title = "DLSS 5 MANAGER FLOW VIEW legend",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                CanResize = false,
+                Topmost = true,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                Focusable = false,
+                WindowDecorations = WindowDecorations.None,
+                WindowStartupLocation = WindowStartupLocation.Manual,
+                Background = Brushes.Transparent,
+                DataContext = v,
+                Content =
+                    Border(
+                        Background = SolidColorBrush(Color.Parse("#F20B1214")),
+                        BorderBrush = SolidColorBrush(Color.Parse("#55E040C8")),
+                        BorderThickness = Thickness(1.),
+                        CornerRadius = CornerRadius(12.),
+                        Padding = Thickness(14., 10.),
+                        Child = rows
+                    )
+            )
+
+        window.TransparencyLevelHint <- [ WindowTransparencyLevel.Transparent ]
+
+        window.Opened.Add(fun _ ->
+            let handle = window.TryGetPlatformHandle()
+
+            if not (isNull handle) then
+                ScreenDesktop.makeGhost handle.Handle
+                ScreenDesktop.keepOnTop handle.Handle)
+
+        window
+
+    let syncLegend () =
+        match this.DataContext with
+        | :? ScreenViewModel as v when v.IsFlowLegendShown ->
+            let window =
+                match legend with
+                | Some w -> w
+                | None ->
+                    let w = buildLegend v
+                    legend <- Some w
+                    w
+
+            let (x, y, w, _) = v.CounterArea
+            // Top-right: the counter keeps the other corner.
+            let width = if window.Bounds.Width > 1. then int (window.Bounds.Width * window.RenderScaling) else 330
+            let at = PixelPoint(x + max 0 (w - width - 20), y + 20)
+            if window.Position <> at then window.Position <- at
+
+            if not window.IsVisible then window.Show()
+            else
+                let handle = window.TryGetPlatformHandle()
+                if not (isNull handle) then ScreenDesktop.keepOnTop handle.Handle
+        | _ -> legend |> Option.iter (fun w -> if w.IsVisible then w.Hide())
+
+    /// While the overlay is open the counter can be picked up: it takes clicks,
+    /// shows a hand and a brighter edge. Closed, clicks go through it again.
+    let setCounterMovable (movable: bool) =
+        if movable <> counterMovable then
+            counterMovable <- movable
+
+            counter
+            |> Option.iter (fun w ->
+                let handle = w.TryGetPlatformHandle()
+                if not (isNull handle) then ScreenDesktop.setClickThrough handle.Handle (not movable)
+
+                match w.Content with
+                | :? Border as pill ->
+                    pill.Cursor <- (if movable then new Cursor(StandardCursorType.SizeAll) else Cursor.Default)
+                    pill.BorderBrush <- SolidColorBrush(Color.Parse(if movable then "#FF34D399" else "#5500FF88"))
+                    pill.BorderThickness <- Thickness(if movable then 1.5 else 1.)
+                | _ -> ())
+
     do
         AvaloniaXamlLoader.Load(this)
         this.AddHandler(Button.ClickEvent, EventHandler<RoutedEventArgs>(fun _ _ -> UiSounds.tick()), RoutingStrategies.Bubble)
 
         // The page never scrolls itself.
         //
-        // Pressing a switch focuses it, focus asks to be brought into view, and
-        // the scroll viewer obliges - so a click near the bottom of the page
-        // jumped the whole section down under the hand that clicked it
-        // (reported by several people: "it scrolls down on its own when I press
-        // a button"). Nothing here needs to be scrolled to: everything a person
-        // presses is already where they are looking, and the wheel and the bar
-        // still work exactly as before.
-        this.AddHandler(
-            Control.RequestBringIntoViewEvent,
-            EventHandler<RequestBringIntoViewEventArgs>(fun _ e -> e.Handled <- true),
-            RoutingStrategies.Tunnel ||| RoutingStrategies.Bubble
-        )
+        // Anything that takes focus - a bar, a list, a switch - asks to be
+        // brought into view, and the scroll viewer obliges. Focus also comes
+        // back on its own: whenever the window is in front again (after the
+        // output, the game or FLOW MFG's borderless window took the front),
+        // the last bar or list touched gets focus once more and the page jumped
+        // down to it ("it scrolls down on its own when I turn something on").
+        // Nothing here needs to be scrolled to; the wheel and the bar still
+        // work exactly as before.
+        //
+        // The page's own scroll viewer is inside this control, so the request
+        // reaches it before it reaches the control: stopping it here (round 4)
+        // was too late. The viewer no longer answers focus at all
+        // (BringIntoViewOnFocusChange in the XAML), and the content stops any
+        // other request before it gets to the viewer. Lists open in their own
+        // popup and scroll inside it first, untouched.
+        match this.FindControl<Border>("ScreenRoot") with
+        | null -> ()
+        | root ->
+            root.AddHandler(
+                Control.RequestBringIntoViewEvent,
+                EventHandler<RequestBringIntoViewEventArgs>(fun _ e -> e.Handled <- true)
+            )
 
         // Press anywhere on a bar and slide, the way a phone does it.
         //
@@ -272,6 +399,12 @@ type ScreenView() as this =
                     // Both shortcuts belong to this section. Pressed while the
                     // window sits on GAMES or COMMUNITY they used to act anyway;
                     // what is already open can always be closed, though.
+                    // Minimized or in the tray the window shows no section at
+                    // all, and the shortcuts are the only way to LIVE FLOW
+                    // (round 30). Started by Windows it sits there on GAMES -
+                    // the overlay's key did nothing, and nothing said why.
+                    let away () = not owner.IsVisible || owner.WindowState = WindowState.Minimized
+
                     let allowed () =
                         let isOpen =
                             match overlay with
@@ -279,26 +412,53 @@ type ScreenView() as this =
                             | None -> false
 
                         match owner.DataContext with
-                        | :? MainViewModel as main -> main.IsScreenTabActive || isOpen
+                        | :? MainViewModel as main -> main.IsScreenTabActive || isOpen || away ()
                         | _ -> false
+
+                    /// The overlay's key from the tray: LIVE FLOW becomes the
+                    /// open section, so what the overlay shows is what the
+                    /// window shows when it comes back.
+                    let toLiveFlow () =
+                        match owner.DataContext with
+                        | :? MainViewModel as main when away () && not main.IsScreenTabActive -> main.ActiveSection <- "screen"
+                        | _ -> ()
 
                     let register () =
                         if hotkey.IsNone && not closing then
                             let v = vm ()
                             let (overlayMods, overlayKey) = v.OverlayHotkey
                             let (dlssMods, dlssKey) = v.DlssHotkey
+                            let (shotMods, shotKey) = v.ScreenshotHotkey
+                            let (recMods, recKey) = v.RecordHotkey
 
                             let overlayBinding: ScreenDesktop.HotkeyBinding =
                                 { Id = overlayHotkeyId
                                   Modifiers = overlayMods
                                   Key = overlayKey
-                                  Action = (fun () -> Dispatcher.UIThread.Post(fun () -> if allowed () then this.ToggleOverlay())) }
+                                  Action =
+                                    (fun () ->
+                                        Dispatcher.UIThread.Post(fun () ->
+                                            if allowed () then
+                                                toLiveFlow ()
+                                                this.ToggleOverlay())) }
 
                             let dlssBinding: ScreenDesktop.HotkeyBinding =
                                 { Id = dlssHotkeyId
                                   Modifiers = dlssMods
                                   Key = dlssKey
                                   Action = (fun () -> Dispatcher.UIThread.Post(fun () -> if allowed () then vm().ToggleNr())) }
+
+                            let shotBinding: ScreenDesktop.HotkeyBinding =
+                                { Id = shotHotkeyId
+                                  Modifiers = shotMods
+                                  Key = shotKey
+                                  Action = (fun () -> Dispatcher.UIThread.Post(fun () -> if allowed () then vm().TakeScreenshot())) }
+
+                            let recordBinding: ScreenDesktop.HotkeyBinding =
+                                { Id = recordHotkeyId
+                                  Modifiers = recMods
+                                  Key = recKey
+                                  Action = (fun () -> Dispatcher.UIThread.Post(fun () -> if allowed () then vm().ToggleRecording())) }
 
                             // Windows refuses a combination another program has
                             // already claimed. Say which, and where to change it.
@@ -308,7 +468,9 @@ type ScreenView() as this =
 
                                     let names =
                                         [ if List.contains overlayHotkeyId ids then yield v.OverlayKeyText
-                                          if List.contains dlssHotkeyId ids then yield v.DlssKeyText ]
+                                          if List.contains dlssHotkeyId ids then yield v.DlssKeyText
+                                          if List.contains shotHotkeyId ids then yield v.ScreenshotKeyText
+                                          if List.contains recordHotkeyId ids then yield v.RecordKeyText ]
 
                                     v.ReportError(
                                         String.Join(", ", names)
@@ -316,7 +478,7 @@ type ScreenView() as this =
                                     ))
 
                             hotkey <-
-                                Some(new ScreenDesktop.HotkeyListener([ overlayBinding; dlssBinding ], refused) :> IDisposable)
+                                Some(new ScreenDesktop.HotkeyListener([ overlayBinding; dlssBinding; shotBinding; recordBinding ], refused) :> IDisposable)
 
                     // A changed shortcut takes effect at once: the old pair is
                     // released and the new pair registered in its place.
@@ -331,18 +493,31 @@ type ScreenView() as this =
                         counterWired <- true
 
                         (vm ()).PropertyChanged.Add(fun e ->
-                            if e.PropertyName = "IsCounterShown" || e.PropertyName = "CounterArea" then syncCounter ())
+                            if e.PropertyName = "IsCounterShown" || e.PropertyName = "CounterArea" then syncCounter ()
+                            if e.PropertyName = "" || e.PropertyName = "FlowView" || e.PropertyName = "FlowMfg" then syncLegend ())
 
                         counterTimer.Tick.Add(fun _ ->
+                            let overlayOpen =
+                                match overlay with
+                                | Some w -> w.IsVisible
+                                | None -> false
+
+                            // The worker draws the counter; this window is
+                            // only its movable stand-in while the overlay is open.
+                            vm().HoldCounter overlayOpen
                             vm().RefreshCounterShown()
-                            syncCounter ())
+                            syncCounter ()
+                            syncLegend ()
+                            setCounterMovable overlayOpen)
 
                         counterTimer.Start()
 
                         owner.Closed.Add(fun _ ->
                             counterTimer.Stop()
                             counter |> Option.iter (fun w -> w.Close())
-                            counter <- None)
+                            counter <- None
+                            legend |> Option.iter (fun w -> w.Close())
+                            legend <- None)
 
                     owner.Opened.Add(fun _ -> register())
                     if owner.IsVisible then register()
@@ -355,10 +530,14 @@ type ScreenView() as this =
 
     member _.ConfigureOverlay() =
         overlayInstance <- true
-        for name in ["NoResults"; "ScreenHeader"; "SourceCard"; "ComparisonCard"; "PresetsCard"; "SettingsCard"; "AmdNotice"] do
+        // The overlay's own card would only offer to open the overlay it is in.
+        for name in ["NoResults"; "ScreenHeader"; "ComparisonCard"; "PresetsCard"; "SettingsCard"; "AmdNotice"
+                     "OverlayCard"] do
             this.FindControl<Control>(name).IsVisible <- false
         // The overlay is where the picture is tuned while it is on screen, so
-        // the colours belong here as much as the processing does.
+        // the colours belong here as much as the processing does. The
+        // generator's card and FPS / VRR stay as the page has them (DLSS MFG
+        // or FLOW MFG, by the card).
         for name in ["ProcessingCard"; "EffectCard"; "ColorsCard"; "CaptureCard"] do
             this.FindControl<Control>(name).IsVisible <- true
 
@@ -370,13 +549,7 @@ type ScreenView() as this =
         | root -> root.Padding <- Thickness(18., 6., 18., 18.)
 
     member _.ToggleOverlay() =
-        // AMD MODE: nothing to show in it - the section says why instead. An
-        // overlay already open when it was switched on can still be put away.
-        if not closing && vm().IsAmdBlocked then
-            match overlay with
-            | Some window when window.IsVisible -> window.Hide()
-            | _ -> ()
-        elif not closing then
+        if not closing then
             vm().Start()
             match overlay with
             | Some window when window.IsVisible -> window.Hide()
@@ -571,7 +744,15 @@ type ScreenView() as this =
 
     member this.OnOpenOverlay(_: obj, _: RoutedEventArgs) = this.ToggleOverlay()
 
+    /// A folded card's title: open it, or fold it again.
+    member _.OnToggleSection(sender: obj, _: RoutedEventArgs) =
+        match sender with
+        | :? Control as c when not (isNull c.Tag) -> vm().ToggleSection(string c.Tag)
+        | _ -> ()
+
     member _.OnToggleFpsCounter(_: obj, _: RoutedEventArgs) = vm().ToggleFpsCounter()
+
+    member _.OnToggleFlowView(_: obj, _: RoutedEventArgs) = vm().ToggleFlowView()
 
     /// The key cap in a shortcut panel: click it, then press the combination.
     member _.OnCaptureHotkey(sender: obj, _: RoutedEventArgs) =

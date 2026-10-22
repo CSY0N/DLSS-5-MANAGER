@@ -27,11 +27,11 @@ open Microsoft.Win32
 module CommunityApi =
 
     [<Literal>]
-    let BaseUrl = "I am granting you access to use the application, but I am not granting you the right to use the servers linked to the community"
+    let BaseUrl = "https://dlss5manager-community-api.gtagatgta9.workers.dev"
 
     /// Must match `wrangler secret put APP_SECRET` on the Worker.
     [<Literal>]
-    let AppSecret = "As stated, it is a secret that cannot be disclosed; I am granting you access to use the application, but I am not granting you the right to use the servers linked to the community."
+    let AppSecret = "this-nodix-tech-server-is-close-if-you-are-her-you-are-a-dog"
 
     [<Literal>]
     let TutorialsUrl = "https://dlss5manager.app/tutorials"
@@ -89,6 +89,15 @@ module CommunityApi =
           [<JsonPropertyName("arch")>] Arch: string
           [<JsonPropertyName("neural")>] Neural: bool
           [<JsonPropertyName("overlay")>] Overlay: bool
+          /// Installed or changed with the advanced install. A server from
+          /// before it leaves both out: false and null.
+          [<JsonPropertyName("advanced")>] Advanced: bool
+          /// The parts an advanced install is made of, by their ids in
+          /// `AdvancedInstall` ("reshade", "host64", ...).
+          [<JsonPropertyName("parts")>] Parts: string[]
+          /// The install carried files of the poster's own - extras, add-ons,
+          /// plugins. The card says EXTRA.
+          [<JsonPropertyName("extra")>] Extra: bool
           [<JsonPropertyName("target")>] Target: string
           [<JsonPropertyName("body")>] Body: string
           [<JsonPropertyName("gpu")>] Gpu: string
@@ -159,6 +168,13 @@ module CommunityApi =
           Arch: string
           Neural: bool
           Overlay: bool
+          /// Made or changed in the advanced install sheet. Such a post can
+          /// only say the game works - the server holds the same line.
+          Advanced: bool
+          /// The parts it is made of, the user's own files left out.
+          Parts: string[]
+          /// Files of the user's own went in with it (never listed).
+          Extra: bool
           Target: string
           Body: string
           Specs: SystemSpecs.Specs option }
@@ -390,6 +406,11 @@ module CommunityApi =
                   sprintf "\"arch\":\"%s\"," (escape draft.Arch)
                   sprintf "\"neural\":%b," draft.Neural
                   sprintf "\"overlay\":%b," draft.Overlay
+                  sprintf "\"advanced\":%b," draft.Advanced
+                  sprintf "\"extra\":%b," draft.Extra
+                  sprintf
+                      "\"parts\":[%s],"
+                      (String.Join(",", (if isNull draft.Parts then [||] else draft.Parts) |> Array.map (fun p -> "\"" + escape p + "\"")))
                   sprintf "\"target\":\"%s\"," (escape draft.Target)
                   sprintf "\"body\":\"%s\"," (escape draft.Body)
                   sprintf "\"gpu\":\"%s\"," (escape specs.Gpu)

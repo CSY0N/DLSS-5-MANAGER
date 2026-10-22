@@ -14,10 +14,10 @@
     <Authors>NODIX TECH</Authors>
     <Description>DLSS 5 MANAGER — built by NODIX TECH.</Description>
     <Copyright>© 2026 NODIX TECH. All rights reserved.</Copyright>
-    <Version>1.3.3</Version>
-    <AssemblyVersion>1.3.3.0</AssemblyVersion>
-    <FileVersion>1.3.3.0</FileVersion>
-    <InformationalVersion>1.3.3</InformationalVersion>
+    <Version>1.3.8</Version>
+    <AssemblyVersion>1.3.8.0</AssemblyVersion>
+    <FileVersion>1.3.8.0</FileVersion>
+    <InformationalVersion>1.3.8</InformationalVersion>
 
     <!-- ================================================================= -->
     <!-- RUNTIME FOOTPRINT                                                  -->
@@ -39,7 +39,7 @@
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
     <!-- The payload the installer deploys; must sit next to the built executable. -->
-    <Content Include="mod files\**" Exclude="mod files\**\__pycache__\**;mod files\**\*.pyc" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="mod files\**" Exclude="mod files\**\__pycache__\**;mod files\**\*.pyc;mod files\native\supermotion\Run\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- UI translations, read at runtime. -->
     <Content Include="languages\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- The window backgrounds, one per colour atmosphere, and the small copies
@@ -62,6 +62,7 @@
          from the card this machine has, which SystemSpecs is what reads. -->
     <Compile Include="Services\SystemSpecs.fs" />
     <Compile Include="Services\ModInstaller.fs" />
+    <Compile Include="Services\AdvancedInstall.fs" />
     <Compile Include="Services\AnalysisStore.fs" />
     <Compile Include="Services\UpdateChecker.fs" />
     <!-- After UpdateChecker and ModInstaller: it uses the version string
@@ -70,16 +71,21 @@
     <Compile Include="Services\CommunityApi.fs" />
     <Compile Include="Services\ChatImages.fs" />
     <Compile Include="Services\UiSounds.fs" />
+    <Compile Include="Services\WindowsStartup.fs" />
     <Compile Include="Services\BackgroundStore.fs" />
     <Compile Include="Services\ScreenDesktop.fs" />
+    <Compile Include="Services\SuperMotion.fs" />
+    <Compile Include="Services\StorageCleaner.fs" />
     <Compile Include="ViewModels\ViewModelBase.fs" />
     <Compile Include="ViewModels\SetupViewModel.fs" />
+    <Compile Include="ViewModels\SmfgViewModel.fs" />
     <Compile Include="ViewModels\ScreenViewModel.fs" />
     <Compile Include="ViewModels\GameCardViewModel.fs" />
     <Compile Include="ViewModels\CommunityViewModel.fs" />
     <Compile Include="ViewModels\ChatViewModel.fs" />
     <Compile Include="ViewModels\GalleryViewModel.fs" />
     <Compile Include="ViewModels\DmViewModel.fs" />
+    <Compile Include="ViewModels\AdvancedInstallViewModel.fs" />
     <Compile Include="ViewModels\MainViewModel.fs" />
     <Compile Include="Views\ScreenView.axaml.fs" />
     <Compile Include="Views\MainWindow.axaml.fs" />

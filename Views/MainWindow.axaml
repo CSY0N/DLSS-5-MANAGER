@@ -760,6 +760,69 @@
                                                               OnContent="" OffContent="" VerticalAlignment="Center" />
                                             </Grid>
                                         </Border>
+
+                                        <!-- Advanced install: the Manage sheet opens as a large window
+                                             where every part of the mod has its own switch. The routes
+                                             stay at the top of it as presets. -->
+                                        <Border Background="#0AFFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" CornerRadius="14"
+                                                Padding="14,11" IsVisible="{Binding ShowAdvancedInstallCard}"
+                                                ToolTip.Tip="{Binding Loc.AdvInstallTip}">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="11">
+                                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="9" Background="#1AA78BFA"
+                                                        BorderBrush="#33A78BFA" BorderThickness="1" VerticalAlignment="Center">
+                                                    <PathIcon Data="M 4,6 H 14 V 8 H 4 Z M 17,6 H 20 V 8 H 17 Z M 15,4.5 H 17 V 9.5 H 15 Z M 4,11 H 7 V 13 H 4 Z M 10,11 H 20 V 13 H 10 Z M 8,9.5 H 10 V 14.5 H 8 Z M 4,16 H 12 V 18 H 4 Z M 15,16 H 20 V 18 H 15 Z M 13,14.5 H 15 V 19.5 H 13 Z"
+                                                              Width="14" Height="14" Foreground="#C4B5FD" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Loc.AdvInstall}" FontSize="13.5" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                                                </StackPanel>
+
+                                                <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsAdvancedInstallEnabled, Mode=TwoWay}"
+                                                              OnContent="" OffContent="" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Minimize to tray: minimizing hides the window beside the
+                                             clock; its icon there brings it back. -->
+                                        <Border Background="#0AFFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" CornerRadius="14"
+                                                Padding="14,11" IsVisible="{Binding ShowTrayCard}"
+                                                ToolTip.Tip="{Binding Loc.MinimizeToTrayTip}">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="11">
+                                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="9" Background="#1A38BDF8"
+                                                        BorderBrush="#3338BDF8" BorderThickness="1" VerticalAlignment="Center">
+                                                    <PathIcon Data="M 3,5 H 21 V 16 H 3 Z M 5,7 V 14 H 19 V 7 Z M 14,18 H 21 V 20 H 14 Z M 16.5,15 L 19.5,15 L 18,17.5 Z"
+                                                              Width="14" Height="14" Foreground="#7DD3FC" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Loc.MinimizeToTray}" FontSize="13.5" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                                                </StackPanel>
+
+                                                <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsMinimizeToTray, Mode=TwoWay}"
+                                                              OnContent="" OffContent="" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Start with Windows: the user's own Run entry, nothing more -->
+                                        <Border Background="#0AFFFFFF" BorderBrush="#18FFFFFF" BorderThickness="1" CornerRadius="14"
+                                                Padding="14,11" IsVisible="{Binding ShowStartupCard}"
+                                                ToolTip.Tip="{Binding Loc.StartWithWindowsTip}">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="11">
+                                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="9" Background="#1A34D399"
+                                                        BorderBrush="#3334D399" BorderThickness="1" VerticalAlignment="Center">
+                                                    <PathIcon Data="M 11,2 H 13 V 12 H 11 Z M 7.05,5.05 L 8.46,6.46 A 7,7 0 1 0 15.54,6.46 L 16.95,5.05 A 9,9 0 1 1 7.05,5.05 Z"
+                                                              Width="14" Height="14" Foreground="#6EE7B7" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Loc.StartWithWindows}" FontSize="13.5" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                                                </StackPanel>
+
+                                                <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsStartWithWindows, Mode=TwoWay}"
+                                                              OnContent="" OffContent="" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
 
@@ -946,6 +1009,35 @@
                                                 </Button>
                                             </StackPanel>
                                         </Grid>
+
+                                        <!-- Round 35: the space the app uses on this PC, and "Free up space" (StorageCleaner):
+                                             picture caches, logs and backups no installed mod needs. -->
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel Grid.Column="0" Spacing="8">
+                                                <TextBlock Text="{Binding Loc.StorageTitle}" FontSize="13.5" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border Background="#10FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1" CornerRadius="10" Padding="12,6">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding Loc.StorageUsed}" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                            <TextBlock Text="{Binding StorageUsedText}" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Background="#10FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1" CornerRadius="10" Padding="12,6">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <TextBlock Text="{Binding Loc.StorageFreeable}" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                            <TextBlock Text="{Binding StorageFreeText}" FontSize="11" FontWeight="Bold" Foreground="#E2E8F0" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Loc.StorageHint}" FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding StorageNote}" FontSize="11" Foreground="#4ADE80" IsVisible="{Binding HasStorageNote}" />
+                                            </StackPanel>
+
+                                            <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnFreeUpSpaceClicked" Cursor="Hand" Padding="14,8"
+                                                    VerticalAlignment="Center" IsEnabled="{Binding CanFreeUpSpace}" Margin="12,0,0,0">
+                                                <TextBlock Text="{Binding Loc.StorageFreeUp}" FontSize="11.5" FontWeight="Bold" Foreground="#FFFFFF" />
+                                            </Button>
+                                        </Grid>
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
@@ -974,7 +1066,7 @@
                                                 </Button>
 
                                                 <Button Classes="GlassLinkBtn Donate" Click="OnDonateClicked" Cursor="Hand"
-                                                        ToolTip.Tip="ko-fi.com/nodix">
+                                                        ToolTip.Tip="patreon.com/c/nodixtech">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <PathIcon Data="M 12,21.35 L 10.55,20.03 C 5.4,15.36 2,12.28 2,8.5 2,5.42 4.42,3 7.5,3 9.24,3 10.91,3.81 12,5.09 13.09,3.81 14.76,3 16.5,3 19.58,3 22,5.42 22,8.5 22,12.28 18.6,15.36 13.45,20.04 Z"
                                                                   Width="15" Height="15" Foreground="#FF8FB1" VerticalAlignment="Center" />
@@ -2779,7 +2871,7 @@
             <!-- ============================================================ -->
             <!-- MANAGE GAME SHEET                                            -->
             <!-- ============================================================ -->
-            <Panel IsVisible="{Binding IsManageOpen}" ZIndex="9000">
+            <Panel IsVisible="{Binding IsSimpleManageShown}" ZIndex="9000">
                 <!-- Dimming backdrop: click outside to dismiss -->
                 <Border Background="#96000000" PointerPressed="OnManageBackdropPressed" />
 
@@ -2800,10 +2892,20 @@
                              row below: four buttons plus "Complete Installation"
                              do not fit inside a 560px sheet, and the last one was
                              pushed straight out through the frame. -->
-                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,0,0,18">
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="9">
-                                <TextBlock Text="{Binding ManageTitle}" FontSize="17" FontWeight="Bold" Foreground="#FFFFFF"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="300" VerticalAlignment="Center" />
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10"
+                              Margin="0,0,0,18">
+                            <!-- Two lines (round 30): the name with the close button, and
+                                 under it the buttons - the mode on the left, SHARE RESULT on
+                                 the right. On one line, in a language whose "ADVANCED MODE"
+                                 and "SHARE RESULT" are longer, the row ran out of its column
+                                 and under the button beside it; and a sheet 560 wide has no
+                                 room for the name beside two long buttons anyway. The name is
+                                 cut short with "…" only when it is longer than the sheet; its
+                                 margin is the room of the close button and the busy ring. -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding ManageTitle}" FontSize="17"
+                                       FontWeight="Bold" Foreground="#FFFFFF" TextTrimming="CharacterEllipsis" Margin="0,0,72,0"
+                                       VerticalAlignment="Center" ToolTip.Tip="{Binding ManageTitle}" />
+                                <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="9">
 
                                 <!-- Re-reads this one game rather than the whole library.
                                      It spins while it works: the readout below flickers
@@ -2862,20 +2964,32 @@
                                     <TextBlock Text="!" FontSize="14" FontWeight="Black" Foreground="#FCD34D"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Button>
-                            </StackPanel>
+
+                                <!-- This game in the advanced install instead. The setting
+                                     still decides where every game opens; this is for one. -->
+                                <Button Classes="EmptyActionBtn" Click="OnSwitchSheetClicked" Cursor="Hand"
+                                        IsEnabled="{Binding IsManageReady}" Padding="10,4" VerticalAlignment="Center"
+                                        ToolTip.Tip="{Binding Loc.ModeAdvancedTip}">
+                                    <TextBlock Text="{Binding Loc.ModeAdvanced}" FontSize="9.5" FontWeight="Bold" Foreground="#C4B5FD" LetterSpacing="0.4"
+                                               MaxWidth="170" TextTrimming="CharacterEllipsis" />
+                                </Button>
+                                </StackPanel>
 
                             <!-- Stays on screen through an install. It is disabled while one
                                  runs (IsManageReady), but disappearing made the header jump. -->
-                            <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnShareToCommunityClicked" Cursor="Hand"
-                                    IsEnabled="{Binding IsManageReady}"
-                                    Padding="13,6" VerticalAlignment="Top">
-                                <TextBlock Text="{Binding Loc.CommunityShare}" FontSize="10.5" FontWeight="Bold" Foreground="#F1F5F9" />
+                            <Button Grid.Row="1" Grid.Column="1" Classes="EmptyActionBtn" Click="OnShareToCommunityClicked"
+                                    Cursor="Hand" IsEnabled="{Binding IsManageReady}" HorizontalAlignment="Right"
+                                    Padding="13,6" VerticalAlignment="Center" ToolTip.Tip="{Binding Loc.CommunityShare}">
+                                <TextBlock Text="{Binding Loc.CommunityShare}" FontSize="10.5" FontWeight="Bold" Foreground="#F1F5F9"
+                                           MaxWidth="190" TextTrimming="CharacterEllipsis" />
                             </Button>
 
+                            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="10"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top">
                             <!-- Also stays put. Disabled rather than hidden while the mod is
                                  being written: dismissing mid-install is still not allowed,
                                  but the control no longer vanishes from under the cursor. -->
-                            <Button Grid.Column="2" Classes="GlassWindowControlBtn Close" Click="OnManageCloseClicked"
+                            <Button Classes="GlassWindowControlBtn Close" Click="OnManageCloseClicked"
                                     IsEnabled="{Binding !IsInstalling}"
                                     VerticalAlignment="Top" ToolTip.Tip="{Binding Loc.Close}">
                                 <PathIcon Data="M 19,6.41 L 17.59,5 L 12,10.59 L 6.41,5 L 5,6.41 L 10.59,12 L 5,17.59 L 6.41,19 L 12,13.41 L 17.59,19 L 19,17.59 L 13.41,12 Z"
@@ -2884,8 +2998,8 @@
 
                             <!-- While the mod is being written, the close control becomes a
                                  spinner: dismissing the sheet mid-install is not an option. -->
-                            <Border Grid.Column="3" Classes="ManageBusyRing" IsVisible="{Binding IsInstalling}"
-                                    VerticalAlignment="Top" HorizontalAlignment="Right"
+                            <Border Classes="ManageBusyRing" IsVisible="{Binding IsInstalling}"
+                                    VerticalAlignment="Top"
                                     Width="26" Height="26" CornerRadius="13"
                                     Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1"
                                     IsHitTestVisible="False" ToolTip.Tip="{Binding Loc.ManageInstallingTip}">
@@ -2910,6 +3024,7 @@
                                     </Ellipse.Styles>
                                 </Ellipse>
                             </Border>
+                            </StackPanel>
                         </Grid>
 
                     <!-- The middle band. Inset from the scrollbar track, which is drawn
@@ -3668,6 +3783,52 @@
                                                    FontSize="11" FontWeight="SemiBold" Foreground="#F87171" TextWrapping="Wrap" />
                                     </StackPanel>
 
+                                    <!-- AMD (round 26): the AMD route's payload, version.dll unless renamed -->
+                                    <Border Height="1" Background="#12FFFFFF" IsVisible="{Binding ShowAmdProxySeparator}" />
+
+                                    <StackPanel Spacing="8" IsVisible="{Binding HasAmdProxy}">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0" Text="AMD" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595"
+                                                       LetterSpacing="0.8" VerticalAlignment="Center" />
+                                            <Border Grid.Column="1" Classes="DetectChip">
+                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                    <TextBlock Text="{Binding Loc.DllNameCurrent}" Classes="DetectChipText" Opacity="0.7" />
+                                                    <TextBlock Text="{Binding AmdProxyName}" Classes="DetectChipText" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <ComboBox Grid.Column="0" Classes="GlassComboBox" ItemsSource="{Binding AmdProxyNames}"
+                                                      SelectedItem="{Binding SelectedAmdProxyName, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch" Height="34" VerticalAlignment="Center" />
+                                            <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameAmdPickClicked" Cursor="Hand"
+                                                    IsEnabled="{Binding CanApplyDllName}" Padding="14,6" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                            </Button>
+                                        </Grid>
+                                        <TextBlock Text="{Binding Loc.DllNameCustom}" FontSize="10.5" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <Border Grid.Column="0" Classes="DllNameField" Background="#15000000" BorderBrush="#30FFFFFF" BorderThickness="1"
+                                                    CornerRadius="13" Height="34" Padding="10,0,4,0">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBox Grid.Column="0" Classes="DllNameInput"
+                                                             Text="{Binding AmdCustomName, Mode=TwoWay}" MaxLength="60"
+                                                             PlaceholderText="{Binding Loc.DllNamePlaceholder}" VerticalAlignment="Center" />
+                                                    <Border Grid.Column="1" Background="#2200FF88" BorderBrush="#5500FF88" BorderThickness="1"
+                                                            CornerRadius="9" Padding="10,3" VerticalAlignment="Center">
+                                                        <TextBlock Text=".dll" FontSize="12.5" FontWeight="Bold" Foreground="#7CFFC4" />
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                            <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameAmdCustomClicked" Cursor="Hand"
+                                                    IsEnabled="{Binding CanRenameAmdCustom}" Padding="14,6" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                            </Button>
+                                        </Grid>
+                                        <TextBlock Text="{Binding Loc.DllNameTaken}" IsVisible="{Binding IsAmdCustomTaken}"
+                                                   FontSize="11" FontWeight="SemiBold" Foreground="#F87171" TextWrapping="Wrap" />
+                                    </StackPanel>
+
                                     <TextBlock Text="{Binding DllNameStatus}" IsVisible="{Binding HasDllNameStatus}" FontSize="11"
                                                FontWeight="SemiBold" Foreground="{Binding DllNameStatusBrush}" TextWrapping="Wrap" />
                                 </StackPanel>
@@ -3764,6 +3925,1076 @@
                             <Button Grid.Column="3" Classes="AppleDangerBtn" Click="OnUninstallDlssClicked" Cursor="Hand"
                                     IsVisible="{Binding ShowUninstallButton}" IsEnabled="{Binding IsManageReady}"
                                     Content="{Binding Loc.RemoveDlss}" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Panel>
+
+            <!-- ============================================================ -->
+            <!-- ADVANCED INSTALL SHEET                                       -->
+            <!-- Settings -> Features -> Advanced install. The same game and  -->
+            <!-- the same parts as the sheet above, one switch each; the      -->
+            <!-- routes stay at the top as presets. The plan and the runs are -->
+            <!-- AdvancedInstallViewModel, the work AdvancedInstall.fs.       -->
+            <!-- ============================================================ -->
+            <Panel IsVisible="{Binding IsAdvancedManageShown}" ZIndex="9000">
+                <!-- Dimming backdrop: click outside to dismiss, as on the sheet above -->
+                <Border Background="#A6000000" PointerPressed="OnManageBackdropPressed" />
+
+                <Border Classes="GlassModalCard" MaxWidth="1680" MaxHeight="1180" Margin="34,26" Padding="0"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ClipToBounds="True">
+                    <Border.Styles>
+                        <!-- One part of the mod -->
+                        <Style Selector="Border.AdvPart">
+                            <Setter Property="Background" Value="#09FFFFFF" />
+                            <Setter Property="BorderBrush" Value="#16FFFFFF" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Setter Property="CornerRadius" Value="14" />
+                            <Setter Property="Padding" Value="14,11" />
+                            <Setter Property="Transitions">
+                                <Transitions>
+                                    <BrushTransition Property="Background" Duration="0:0:0.18" />
+                                    <BrushTransition Property="BorderBrush" Duration="0:0:0.18" />
+                                </Transitions>
+                            </Setter>
+                        </Style>
+                        <Style Selector="Border.AdvPart.Wanted">
+                            <Setter Property="Background" Value="#0D35D22B" />
+                            <Setter Property="BorderBrush" Value="#3035D22B" />
+                        </Style>
+                        <Style Selector="Border.AdvPart.Remove">
+                            <Setter Property="Background" Value="#0CF87171" />
+                            <Setter Property="BorderBrush" Value="#48F87171" />
+                        </Style>
+
+                        <!-- What Apply will do about it -->
+                        <Style Selector="Border.AdvStatus">
+                            <Setter Property="CornerRadius" Value="8" />
+                            <Setter Property="Padding" Value="7,2" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Setter Property="Background" Value="#10FFFFFF" />
+                            <Setter Property="BorderBrush" Value="#20FFFFFF" />
+                            <Setter Property="VerticalAlignment" Value="Center" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus TextBlock">
+                            <Setter Property="FontSize" Value="10" />
+                            <Setter Property="FontWeight" Value="Bold" />
+                            <Setter Property="Foreground" Value="#94A3B8" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.On">
+                            <Setter Property="Background" Value="#1F22C55E" />
+                            <Setter Property="BorderBrush" Value="#5522C55E" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.On TextBlock">
+                            <Setter Property="Foreground" Value="#86EFAC" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.Add">
+                            <Setter Property="Background" Value="#1F38BDF8" />
+                            <Setter Property="BorderBrush" Value="#5538BDF8" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.Add TextBlock">
+                            <Setter Property="Foreground" Value="#7DD3FC" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.Remove">
+                            <Setter Property="Background" Value="#22F87171" />
+                            <Setter Property="BorderBrush" Value="#66F87171" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.Remove TextBlock">
+                            <Setter Property="Foreground" Value="#FCA5A5" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.Warn">
+                            <Setter Property="Background" Value="#22F59E0B" />
+                            <Setter Property="BorderBrush" Value="#66F59E0B" />
+                        </Style>
+                        <Style Selector="Border.AdvStatus.Warn TextBlock">
+                            <Setter Property="Foreground" Value="#FCD34D" />
+                        </Style>
+
+                        <!-- A group's heading: a short green rule and the name -->
+                        <Style Selector="Border.AdvGroupHead">
+                            <Setter Property="BorderThickness" Value="2,0,0,0" />
+                            <Setter Property="BorderBrush" Value="#A035D22B" />
+                            <Setter Property="Padding" Value="8,1,0,1" />
+                            <Setter Property="Margin" Value="2,10,0,0" />
+                            <Setter Property="HorizontalAlignment" Value="Left" />
+                        </Style>
+                        <Style Selector="Border.AdvGroupHead.First">
+                            <Setter Property="Margin" Value="2,0,0,0" />
+                        </Style>
+                        <Style Selector="Border.AdvGroupHead TextBlock">
+                            <Setter Property="FontSize" Value="11" />
+                            <Setter Property="FontWeight" Value="Bold" />
+                            <Setter Property="Foreground" Value="#CBD5E1" />
+                            <Setter Property="LetterSpacing" Value="0.9" />
+                        </Style>
+
+                        <!-- The DLL NAME card's text boxes, as on the sheet above -->
+                        <Style Selector="TextBox.DllNameInput">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Foreground" Value="#F1F5F9" />
+                            <Setter Property="CaretBrush" Value="#00FF88" />
+                            <Setter Property="SelectionBrush" Value="#5500FF88" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="Padding" Value="2,0" />
+                            <Setter Property="FontSize" Value="12.5" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                        </Style>
+                        <Style Selector="TextBox.DllNameInput /template/ Border#PART_BorderElement">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                        </Style>
+                        <Style Selector="TextBox.DllNameInput:pointerover /template/ Border#PART_BorderElement">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                        </Style>
+                        <Style Selector="TextBox.DllNameInput:focus /template/ Border#PART_BorderElement">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                        </Style>
+                        <Style Selector="Border.DllNameField:focus-within">
+                            <Setter Property="BorderBrush" Value="#7700FF88" />
+                        </Style>
+                    </Border.Styles>
+
+                    <Border.Resources>
+                        <!-- One row: the part, what it is, where it goes, its pick, its switch -->
+                        <DataTemplate x:Key="AdvPartTemplate" x:DataType="vm:AdvancedPartViewModel">
+                            <Border Classes="AdvPart" Classes.Wanted="{Binding IsWanted}" Classes.Remove="{Binding IsToneRemove}"
+                                    ToolTip.Tip="{Binding Description}" IsVisible="{Binding IsShown}">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <StackPanel Grid.Column="0" Spacing="6">
+                                        <WrapPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" Foreground="#F1F5F9"
+                                                       VerticalAlignment="Center" Margin="0,0,8,2" />
+                                            <Border Classes="AdvStatus" Classes.On="{Binding IsToneOn}" Classes.Add="{Binding IsToneAdd}"
+                                                    Classes.Remove="{Binding IsToneRemove}" Classes.Warn="{Binding IsToneWarn}" Margin="0,0,6,2">
+                                                <TextBlock Text="{Binding StatusText}" />
+                                            </Border>
+                                            <!-- The files on the game, on hover -->
+                                            <Border IsVisible="{Binding HasFiles}" ToolTip.Tip="{Binding FilesTip}" Background="Transparent"
+                                                    Width="18" Height="18" CornerRadius="9" VerticalAlignment="Center" Margin="0,0,0,2">
+                                                <PathIcon Data="M 6,2 H 14 L 20,8 V 22 H 6 Z M 14,2 V 8 H 20 M 9,13 H 17 M 9,17 H 15"
+                                                          Width="11" Height="11" Foreground="#7C8595" />
+                                            </Border>
+                                        </WrapPanel>
+
+                                        <TextBlock Text="{Binding Where}" IsVisible="{Binding HasWhere}" FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="#64748B" LetterSpacing="0.3" />
+
+                                        <ItemsControl ItemsSource="{Binding Options}" IsVisible="{Binding HasOptions}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:AdvancedOptionViewModel">
+                                                    <Button Classes="SegmentedTab" Classes.Active="{Binding IsActive}" Click="OnAdvancedOptionClicked"
+                                                            Content="{Binding Label}" Padding="10,4" Margin="0,0,5,5" FontSize="10.5" Cursor="Hand" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <Button Classes="AssetPrimaryBtn Small" IsVisible="{Binding ShowDownload}" Click="OnOpenAssetsClicked"
+                                                Content="{Binding DownloadText}" Cursor="Hand" HorizontalAlignment="Left" />
+
+                                        <!-- "Add addon" under ReShade, "Add plugin" under OptiScaler:
+                                             the user's own files, for this game only. Each comes off
+                                             with its x, and all of them with the install. -->
+                                        <WrapPanel Orientation="Horizontal" IsVisible="{Binding SupportsUserFiles}">
+                                            <Button Classes="EmptyActionBtn" Click="OnAdvancedAddUserFileClicked" Cursor="Hand"
+                                                    IsEnabled="{Binding CanAddUserFile}" Padding="10,4" Margin="0,2,6,4"
+                                                    ToolTip.Tip="{Binding AddUserFileTip}" ToolTip.ShowOnDisabled="True">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <PathIcon Data="M 11,5 H 13 V 11 H 19 V 13 H 13 V 19 H 11 V 13 H 5 V 11 H 11 Z"
+                                                              Width="9" Height="9" Foreground="#86EFAC" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding AddUserFileText}" FontSize="10.5" FontWeight="Bold"
+                                                               Foreground="#E2E8F0" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+
+                                            <Button Classes="EmptyActionBtn" Click="OnAdvancedAddUserFolderClicked" Cursor="Hand"
+                                                    IsVisible="{Binding SupportsUserFolder}" IsEnabled="{Binding CanAddUserFile}"
+                                                    Padding="10,4" Margin="0,2,6,4"
+                                                    ToolTip.Tip="{Binding AddUserFileTip}" ToolTip.ShowOnDisabled="True">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <PathIcon Data="M 10,4 H 4 C 2.89,4 2,4.89 2,6 V 18 C 2,19.1 2.89,20 4,20 H 20 C 21.1,20 22,19.1 22,18 V 8 C 22,6.89 21.1,6 20,6 H 12 L 10,4 Z"
+                                                              Width="10" Height="10" Foreground="#86EFAC" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding AddUserFolderText}" FontSize="10.5" FontWeight="Bold"
+                                                               Foreground="#E2E8F0" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+
+                                            <ItemsControl ItemsSource="{Binding UserFiles}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:AdvancedUserFileViewModel">
+                                                        <Border Background="#1A7C3AED" BorderBrush="#40A78BFA" BorderThickness="1" CornerRadius="9"
+                                                                Padding="9,2,3,2" Margin="0,2,6,4" VerticalAlignment="Center" ToolTip.Tip="{Binding Path}">
+                                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                <TextBlock Text="{Binding Name}" FontSize="10.5" FontWeight="SemiBold" Foreground="#DDD6FE"
+                                                                           VerticalAlignment="Center" MaxWidth="170" TextTrimming="CharacterEllipsis" />
+                                                                <Button Classes="GlassWindowControlBtn" Click="OnAdvancedRemoveUserFileClicked" Cursor="Hand"
+                                                                        Width="18" Height="18" Padding="0" VerticalAlignment="Center">
+                                                                    <PathIcon Data="M 19,6.41 L 17.59,5 L 12,10.59 L 6.41,5 L 5,6.41 L 10.59,12 L 5,17.59 L 6.41,19 L 12,13.41 L 17.59,19 L 19,17.59 L 13.41,12 Z"
+                                                                              Width="7" Height="7" Foreground="#FCA5A5" />
+                                                                </Button>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </WrapPanel>
+                                    </StackPanel>
+
+                                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsWanted, Mode=TwoWay}" IsEnabled="{Binding CanToggle}"
+                                                  OnContent="" OffContent="" VerticalAlignment="Top" Margin="0,-4,-6,0" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </Border.Resources>
+
+                    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+
+                        <!-- A soft wash of the program's green behind the header -->
+                        <Border Grid.RowSpan="5" Height="170" VerticalAlignment="Top" IsHitTestVisible="False">
+                            <Border.Background>
+                                <RadialGradientBrush Center="10%,0%" GradientOrigin="10%,0%" RadiusX="70%" RadiusY="120%">
+                                    <GradientStop Color="#2635D22B" Offset="0.0" />
+                                    <GradientStop Color="#0035D22B" Offset="1.0" />
+                                </RadialGradientBrush>
+                            </Border.Background>
+                        </Border>
+
+                        <!-- Header -->
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12" Margin="26,22,22,14">
+                            <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Spacing="4" VerticalAlignment="Center">
+                                <!-- As in the one-click sheet: the name gives way to the buttons. -->
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="9" HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding ManageTitle}" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF"
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip.Tip="{Binding ManageTitle}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9">
+
+                                    <Border Background="#2635D22B" BorderBrush="#5535D22B" BorderThickness="1" CornerRadius="7"
+                                            Padding="7,2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Loc.AdvBadge}" FontSize="9" FontWeight="Bold" Foreground="#86EFAC" LetterSpacing="0.8" />
+                                    </Border>
+
+                                    <Button Classes="GlassWindowControlBtn" Click="OnRescanGameClicked" Cursor="Hand"
+                                            IsEnabled="{Binding Advanced.IsReady}" VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding Loc.ManageRescanTip}">
+                                        <Panel>
+                                            <PathIcon Data="M 17.65,6.35 A 8,8 0 1 0 19.73,14 H 17.65 A 6,6 0 1 1 12,6 C 13.66,6 15.14,6.69 16.22,7.78 L 13,11 H 20 V 4 L 17.65,6.35 Z"
+                                                      Width="12" Height="12" Foreground="#A1A1AA" VerticalAlignment="Center"
+                                                      IsVisible="{Binding !IsAnalyzing}" />
+                                            <Ellipse Width="12" Height="12" StrokeThickness="2"
+                                                     StrokeDashArray="2.6,1.6" StrokeLineCap="Round"
+                                                     Stroke="{Binding MotifAccentBrush}"
+                                                     IsVisible="{Binding IsAnalyzing}"
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                     RenderTransformOrigin="50%,50%">
+                                                <Ellipse.Styles>
+                                                    <Style Selector="Ellipse">
+                                                        <Style.Animations>
+                                                            <Animation Duration="0:0:1.1" IterationCount="Infinite">
+                                                                <KeyFrame Cue="0%">
+                                                                    <Setter Property="RotateTransform.Angle" Value="0" />
+                                                                </KeyFrame>
+                                                                <KeyFrame Cue="100%">
+                                                                    <Setter Property="RotateTransform.Angle" Value="360" />
+                                                                </KeyFrame>
+                                                            </Animation>
+                                                        </Style.Animations>
+                                                    </Style>
+                                                </Ellipse.Styles>
+                                            </Ellipse>
+                                        </Panel>
+                                    </Button>
+
+                                    <Button Classes="AntiCheatBadge" IsVisible="{Binding HasAntiCheat}" Cursor="Hand"
+                                            VerticalAlignment="Center" ToolTip.Tip="{Binding AntiCheatText}">
+                                        <Button.Flyout>
+                                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                                <Border Background="#F70B1214" BorderBrush="#66F59E0B" BorderThickness="1"
+                                                        CornerRadius="14" Padding="14,12" MaxWidth="320">
+                                                    <StackPanel Spacing="6">
+                                                        <TextBlock Text="{Binding Loc.AntiCheatTitle}" FontSize="12.5" FontWeight="Bold" Foreground="#FCD34D" />
+                                                        <TextBlock Text="{Binding AntiCheatText}" FontSize="12" Foreground="#E2E8F0"
+                                                                   TextWrapping="Wrap" LineHeight="17" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Flyout>
+                                        </Button.Flyout>
+                                        <TextBlock Text="!" FontSize="14" FontWeight="Black" Foreground="#FCD34D"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+
+                                    <!-- Back to the one-click sheet, for this game. Refused while
+                                         the advanced sheet's changes are on the game (or waiting
+                                         to be applied): the tooltip says which. -->
+                                    <Button Classes="EmptyActionBtn" Click="OnSwitchSheetClicked" Cursor="Hand"
+                                            IsEnabled="{Binding Advanced.CanGoEasy}" Padding="10,4" VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding Advanced.EasyModeTip}" ToolTip.ShowOnDisabled="True">
+                                        <TextBlock Text="{Binding Loc.ModeEasy}" FontSize="9.5" FontWeight="Bold" Foreground="#7DD3FC" LetterSpacing="0.4"
+                                                   MaxWidth="150" TextTrimming="CharacterEllipsis" />
+                                    </Button>
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Text="{Binding ManageExePath}" FontSize="11.5" Foreground="#94A3B8"
+                                           TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                            </StackPanel>
+
+                            <Button Grid.Column="2" Classes="EmptyActionBtn" Click="OnShareToCommunityClicked" Cursor="Hand"
+                                    IsEnabled="{Binding Advanced.IsReady}" Padding="13,6" VerticalAlignment="Top"
+                                    ToolTip.Tip="{Binding Loc.CommunityShare}">
+                                <TextBlock Text="{Binding Loc.CommunityShare}" FontSize="10.5" FontWeight="Bold" Foreground="#F1F5F9"
+                                           MaxWidth="190" TextTrimming="CharacterEllipsis" />
+                            </Button>
+
+                            <Button Grid.Column="3" Classes="GlassWindowControlBtn Close" Click="OnManageCloseClicked"
+                                    IsEnabled="{Binding Advanced.IsReady}"
+                                    VerticalAlignment="Top" ToolTip.Tip="{Binding Loc.Close}">
+                                <PathIcon Data="M 19,6.41 L 17.59,5 L 12,10.59 L 6.41,5 L 5,6.41 L 10.59,12 L 5,17.59 L 6.41,19 L 12,13.41 L 17.59,19 L 19,17.59 L 13.41,12 Z"
+                                          Width="10" Height="10" Foreground="#FF6961" VerticalAlignment="Center" />
+                            </Button>
+
+                            <Border Grid.Column="4" Classes="ManageBusyRing" IsVisible="{Binding Advanced.IsBusy}"
+                                    VerticalAlignment="Top" HorizontalAlignment="Right"
+                                    Width="26" Height="26" CornerRadius="13"
+                                    Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1"
+                                    IsHitTestVisible="False" ToolTip.Tip="{Binding Loc.ManageInstallingTip}">
+                                <Ellipse Width="14" Height="14" StrokeThickness="2"
+                                         StrokeDashArray="2.6,1.6" StrokeLineCap="Round"
+                                         Stroke="{Binding MotifAccentBrush}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                                         RenderTransformOrigin="50%,50%">
+                                    <Ellipse.Styles>
+                                        <Style Selector="Ellipse">
+                                            <Style.Animations>
+                                                <Animation Duration="0:0:1.1" IterationCount="Infinite">
+                                                    <KeyFrame Cue="0%">
+                                                        <Setter Property="RotateTransform.Angle" Value="0" />
+                                                    </KeyFrame>
+                                                    <KeyFrame Cue="100%">
+                                                        <Setter Property="RotateTransform.Angle" Value="360" />
+                                                    </KeyFrame>
+                                                </Animation>
+                                            </Style.Animations>
+                                        </Style>
+                                    </Ellipse.Styles>
+                                </Ellipse>
+                            </Border>
+                        </Grid>
+
+                        <!-- AUTOMATIC: the one-click routes as presets. A press ticks what
+                             that route installs; the switches below are the user's after that. -->
+                        <Border Grid.Row="1" Margin="26,0,26,14" Background="#0CFFFFFF" BorderBrush="#1AFFFFFF"
+                                BorderThickness="1" CornerRadius="16" Padding="16,12">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
+                                    <TextBlock Grid.Column="0" Text="{Binding Loc.AdvAutomatic}" FontSize="10.5" FontWeight="Bold"
+                                               Foreground="#7C8595" LetterSpacing="0.9" VerticalAlignment="Center"
+                                               ToolTip.Tip="{Binding Loc.AdvAutomaticHint}" />
+
+
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                        <Border Classes="DetectChip">
+                                            <TextBlock Text="{Binding DetectedApiText}" Classes="DetectChipText" />
+                                        </Border>
+                                        <Border Classes="DetectChip" IsVisible="{Binding HasDetectedArch}">
+                                            <TextBlock Text="{Binding DetectedArchText}" Classes="DetectChipText" />
+                                        </Border>
+                                        <Border Classes="DetectChip" IsVisible="{Binding HasDlssUpscaling}"
+                                                ToolTip.Tip="{Binding Loc.ManageShipsDlssTip}">
+                                            <TextBlock Text="DLSS" Classes="DetectChipText" />
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                                    <Border Grid.Column="0" CornerRadius="13" Padding="3" Background="#0C1014" BorderBrush="#20FFFFFF"
+                                            BorderThickness="1" HorizontalAlignment="Stretch" ToolTip.Tip="{Binding Loc.AdvAutomaticHint}">
+                                        <UniformGrid Columns="{Binding Advanced.PresetColumns}">
+                                            <!-- CUSTOM: lit once the user built the set themselves.
+                                                 It is a mark, not a route - nothing to press. -->
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsCustomized}"
+                                                        IsHitTestVisible="False" Padding="6,7" Content="{Binding Loc.AdvCustom}"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                                            </Panel>
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisOpti}" Click="OnAdvancedPresetClicked"
+                                                        Tag="optiscaler" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="OptiScaler" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.RouteRecommendedTip}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsOptiRouteInstalled}" />
+                                            </Panel>
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisDx12}" Click="OnAdvancedPresetClicked"
+                                                        Tag="dx12" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="DX12" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.RouteDx12Tip}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsDx12RouteInstalled}" />
+                                            </Panel>
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisDx11}" Click="OnAdvancedPresetClicked"
+                                                        Tag="dx11" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="DX11 - 10" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.RouteDx11Tip}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsDx11RouteInstalled}" />
+                                            </Panel>
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisDx9}" Click="OnAdvancedPresetClicked"
+                                                        Tag="dx9" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="DX9" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.RouteDx9Tip}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsDx9RouteInstalled}" />
+                                            </Panel>
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisVulkan}" Click="OnAdvancedPresetClicked"
+                                                        Tag="vulkan" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="Vulkan" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.RouteVulkanTip}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsVulkanRouteInstalled}" />
+                                            </Panel>
+                                            <Panel>
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisEmulator}" Click="OnAdvancedPresetClicked"
+                                                        Tag="emulator" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="EMU" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.HintRouteEmulator}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsEmulatorRouteInstalled}" />
+                                            </Panel>
+                                            <Panel IsVisible="{Binding Advanced.ShowAmdPreset}">
+                                                <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBasisAmd}" Click="OnAdvancedPresetClicked"
+                                                        Tag="amd" IsEnabled="{Binding Advanced.IsReady}" Padding="6,7" Content="AMD" Cursor="Hand"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        ToolTip.Tip="{Binding Loc.HintRouteAmd}" />
+                                                <Border Classes="ActiveRouteDot" IsVisible="{Binding Advanced.IsAmdRouteInstalled}" />
+                                            </Panel>
+                                        </UniformGrid>
+                                    </Border>
+
+                                    <TextBlock Grid.Column="1" Text="{Binding Loc.AdvBuild}" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595"
+                                               LetterSpacing="0.8" VerticalAlignment="Center" />
+
+                                    <Border Grid.Column="2" CornerRadius="13" Padding="3" Background="#0C1014" BorderBrush="#20FFFFFF"
+                                            BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBuild64}" Click="OnAdvancedBuildClicked"
+                                                    Tag="64" IsEnabled="{Binding Advanced.IsReady}" Padding="12,7" Content="64-bit" Cursor="Hand" />
+                                            <Button Classes="SegmentedTab" Classes.Active="{Binding Advanced.IsBuild32}" Click="OnAdvancedBuildClicked"
+                                                    Tag="32" IsEnabled="{Binding Advanced.IsReady}" Padding="12,7" Content="32-bit" Cursor="Hand"
+                                                    ToolTip.Tip="{Binding Loc.Arch32Tip}" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- The parts, and beside them the game and what follows an install -->
+                        <Grid Grid.Row="2" ColumnDefinitions="*,340" ColumnSpacing="18" Margin="26,0,26,0">
+                            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,0,14,14" IsEnabled="{Binding Advanced.IsReady}">
+                                    <!-- One heading per thing: ReShade, OptiScaler, what only
+                                         DirectX 9 and 32-bit games use, AMD, NVIDIA's files; and
+                                         beside them RenoDX, deep-fried chicken, the other DLSS 5
+                                         add-ons, the dynamic extra files. -->
+                                    <StackPanel Grid.Column="0" Spacing="8">
+                                    <Border Classes="AdvGroupHead First">
+                                        <TextBlock Text="{Binding Loc.AdvGroupReShade}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.ReShadeParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead">
+                                        <TextBlock Text="{Binding Loc.AdvGroupOptiScaler}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.OptiScalerParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead">
+                                        <TextBlock Text="{Binding Loc.AdvGroupDx9}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.Dx9Parts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead" IsVisible="{Binding Advanced.ShowAmdGroup}">
+                                        <TextBlock Text="{Binding Loc.AdvGroupAmd}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.AmdParts}" ItemTemplate="{StaticResource AdvPartTemplate}" IsVisible="{Binding Advanced.ShowAmdGroup}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead">
+                                        <TextBlock Text="{Binding Loc.AdvGroupNvidia}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.NvidiaParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Spacing="8">
+                                    <Border Classes="AdvGroupHead First">
+                                        <TextBlock Text="{Binding Loc.AdvGroupRenoDx}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.RenoDxParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead">
+                                        <TextBlock Text="{Binding Loc.AdvGroupDeepFried}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.DeepFriedParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead">
+                                        <TextBlock Text="{Binding Loc.AdvGroupDlss5}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.Dlss5AddonParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+
+                                    <Border Classes="AdvGroupHead">
+                                        <TextBlock Text="{Binding Loc.AdvGroupYours}" />
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Advanced.ExtraParts}" ItemTemplate="{StaticResource AdvPartTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="8" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    </StackPanel>
+                                </Grid>
+                            </ScrollViewer>
+
+                            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                <!-- Starts level with the first row of parts, under the
+                                     headings' line - not above it. -->
+                                <StackPanel Spacing="14" Margin="0,25,14,14">
+
+                                    <!-- The game, as the sheet above reads it -->
+                                    <Border Background="#0CFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="16" Padding="16,13">
+                                        <StackPanel Spacing="10">
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="{Binding Loc.ManageDlss5Status}" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595" LetterSpacing="0.8" />
+                                                <TextBlock Text="{Binding ManageDlss5Text}" FontSize="12" FontWeight="Bold"
+                                                           Foreground="{Binding ManageDlss5Brush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+
+                                            <Rectangle Height="1" Fill="#14FFFFFF" HorizontalAlignment="Stretch" />
+
+                                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                                <StackPanel Grid.Column="0" Spacing="3">
+                                                    <TextBlock Text="RESHADE" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595" LetterSpacing="0.8" />
+                                                    <TextBlock Text="{Binding ManageReShadeText}" FontSize="11.5" FontWeight="SemiBold" Foreground="#CBD5E1" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="3">
+                                                    <TextBlock Text="DLSS" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595" LetterSpacing="0.8" />
+                                                    <TextBlock Text="{Binding ManageDlssText}" FontSize="11.5" FontWeight="SemiBold" Foreground="#CBD5E1" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Spacing="3">
+                                                    <TextBlock Text="STREAMLINE" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595" LetterSpacing="0.8" />
+                                                    <TextBlock Text="{Binding ManageStreamlineText}" FontSize="11.5" FontWeight="SemiBold" Foreground="#CBD5E1" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Rectangle Height="1" Fill="#14FFFFFF" HorizontalAlignment="Stretch" />
+
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <TextBlock Grid.Column="0" Text="{Binding Loc.CommunitySection}" FontSize="9.5" FontWeight="Bold"
+                                                           Foreground="#7C8595" LetterSpacing="0.8" VerticalAlignment="Center"
+                                                           ToolTip.Tip="{Binding Loc.CommunityGlanceHint}" />
+                                                <Button Grid.Column="1" Classes="GlassWindowControlBtn" Click="OnToggleCommunityGlanceClicked"
+                                                        Cursor="Hand" VerticalAlignment="Center" ToolTip.Tip="{Binding Loc.CommunityGlanceHint}">
+                                                    <PathIcon Data="{Binding CommunityGlanceIcon}" Width="11" Height="11"
+                                                              Foreground="#A1A1AA" VerticalAlignment="Center" />
+                                                </Button>
+                                            </Grid>
+
+                                            <StackPanel Spacing="9" IsVisible="{Binding IsCommunityGlanceOpen}">
+                                                <TextBlock Text="{Binding Loc.ManageAskingCommunity}" FontSize="11.5" Foreground="#94A3B8"
+                                                           IsVisible="{Binding IsCommunityGlanceBusy}" />
+
+                                                <StackPanel Spacing="9" IsVisible="{Binding HasCommunityGlance}">
+                                                    <TextBlock Text="{Binding CommunityGlanceTitle}" FontSize="12" FontWeight="SemiBold" Foreground="#E2E8F0"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                                        <StackPanel Grid.Column="0" Spacing="2">
+                                                            <TextBlock Text="{Binding CommunityGlanceWorking}" FontSize="17" FontWeight="Bold" Foreground="#7CFFC4" />
+                                                            <TextBlock Text="{Binding Loc.CommunityGlanceWorked}" FontSize="10.5" Foreground="#7C8595" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="1" Spacing="2">
+                                                            <TextBlock Text="{Binding CommunityGlanceMixed}" FontSize="17" FontWeight="Bold" Foreground="#FCD34D" />
+                                                            <TextBlock Text="{Binding Loc.CommunityGlanceMixed}" FontSize="10.5" Foreground="#7C8595" />
+                                                        </StackPanel>
+                                                        <StackPanel Grid.Column="2" Spacing="2">
+                                                            <TextBlock Text="{Binding CommunityGlanceBroken}" FontSize="17" FontWeight="Bold" Foreground="#FF9C8A" />
+                                                            <TextBlock Text="{Binding Loc.CommunityGlanceFailed}" FontSize="10.5" Foreground="#7C8595" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Button Classes="EmptyActionBtn" Click="OnOpenGlanceInCommunityClicked" Cursor="Hand" Padding="14,7">
+                                                            <TextBlock Text="{Binding Loc.CommunityGlanceOpen}" FontSize="11.5" FontWeight="Bold" Foreground="#E2E8F0" />
+                                                        </Button>
+                                                        <Button Classes="EmptyActionBtn" Click="OnRefreshGlanceClicked" Cursor="Hand" Padding="14,7"
+                                                                IsEnabled="{Binding !IsCommunityGlanceBusy}"
+                                                                ToolTip.Tip="{Binding Loc.CommunityGlanceRefreshHint}">
+                                                            <TextBlock Text="{Binding Loc.CommunityGlanceRefresh}" FontSize="11.5" FontWeight="Bold" Foreground="#94A3B8" />
+                                                        </Button>
+                                                    </StackPanel>
+                                                </StackPanel>
+
+                                                <TextBlock Text="{Binding CommunityGlanceMessage}" IsVisible="{Binding HasCommunityGlanceMessage}"
+                                                           FontSize="11.5" Foreground="#94A3B8" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- CHANGE KEY: the same keys as on the sheet above, for the parts
+                                         that have a menu to open. -->
+                                    <Border Classes="RouteReveal" Classes.Shown="{Binding Advanced.ShowKeysCard}" IsVisible="{Binding Advanced.ShowKeysCard}"
+                                            Background="#0CFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1"
+                                            CornerRadius="16" Padding="16,13">
+                                        <StackPanel Spacing="10">
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="11">
+                                                <Border Grid.Column="0" Width="30" Height="30" CornerRadius="9" Background="#1A00FF88"
+                                                        BorderBrush="#3300FF88" BorderThickness="1" VerticalAlignment="Center">
+                                                    <PathIcon Data="M 20,5 H 4 C 2.9,5 2,5.9 2,7 V 17 C 2,18.1 2.9,19 4,19 H 20 C 21.1,19 22,18.1 22,17 V 7 C 22,5.9 21.1,5 20,5 Z M 11,8 H 13 V 10 H 11 Z M 11,11 H 13 V 13 H 11 Z M 8,8 H 10 V 10 H 8 Z M 8,11 H 10 V 13 H 8 Z M 7,13 H 5 V 11 H 7 Z M 7,10 H 5 V 8 H 7 Z M 16,17 H 8 V 15 H 16 Z M 16,13 H 14 V 11 H 16 Z M 16,10 H 14 V 8 H 16 Z M 19,13 H 17 V 11 H 19 Z M 19,10 H 17 V 8 H 19 Z"
+                                                              Width="14" Height="14" Foreground="#00FF88" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <TextBlock Grid.Column="1" Text="{Binding Loc.KeysSection}" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF"
+                                                           LetterSpacing="0.8" VerticalAlignment="Center" />
+                                            </Grid>
+
+                                            <Border Classes="KeyRow" IsVisible="{Binding Advanced.ShowOptiKey}">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Loc.KeyOptiMenu}" FontSize="12.5" FontWeight="SemiBold"
+                                                               Foreground="#F1F5F9" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                    <Button Grid.Column="1" Classes="KeyChip" IsEnabled="{Binding Advanced.IsReady}" Cursor="Hand" VerticalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <Border Classes="KeyCap">
+                                                                <TextBlock Text="{Binding SelectedOptiMenuKey}" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Loc.KeyChange}" FontSize="10" FontWeight="Bold" Foreground="#86EFAC" LetterSpacing="0.6" VerticalAlignment="Center" />
+                                                            <PathIcon Data="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" Width="9" Height="9" Foreground="#86EFAC" />
+                                                        </StackPanel>
+                                                        <Button.Flyout>
+                                                            <Flyout Placement="LeftEdgeAlignedTop">
+                                                                <Border Background="#F70B1214" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="16" Padding="16">
+                                                                    <StackPanel Spacing="10" Width="290">
+                                                                        <TextBlock Text="{Binding Loc.OptiMenuKeyTitle}" FontWeight="Bold" FontSize="13" Foreground="#E2E8F0" />
+                                                                        <ItemsControl ItemsSource="{Binding OptiMenuKeys}">
+                                                                            <ItemsControl.ItemsPanel>
+                                                                                <ItemsPanelTemplate>
+                                                                                    <WrapPanel />
+                                                                                </ItemsPanelTemplate>
+                                                                            </ItemsControl.ItemsPanel>
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate>
+                                                                                    <Button Classes="SegmentedTab" Content="{Binding}" Tag="{Binding}" Click="OnChooseOptiMenuKey"
+                                                                                            Padding="12,6" Margin="0,0,6,6" Cursor="Hand" />
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </Flyout>
+                                                        </Button.Flyout>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                            <TextBlock Text="{Binding OptiKeyStatus}" IsVisible="{Binding HasOptiKeyStatus}" FontSize="10.5"
+                                                       Foreground="#7CFFC4" TextWrapping="Wrap" />
+
+                                            <Border Classes="KeyRow" IsVisible="{Binding Advanced.ShowReShadeKey}">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Loc.KeyReShade}" FontSize="12.5" FontWeight="SemiBold"
+                                                               Foreground="#F1F5F9" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                    <Button Grid.Column="1" Classes="KeyChip" IsEnabled="{Binding Advanced.IsReady}" Cursor="Hand" VerticalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <Border Classes="KeyCap">
+                                                                <TextBlock Text="{Binding SelectedReShadeKey}" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Loc.KeyChange}" FontSize="10" FontWeight="Bold" Foreground="#86EFAC" LetterSpacing="0.6" VerticalAlignment="Center" />
+                                                            <PathIcon Data="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" Width="9" Height="9" Foreground="#86EFAC" />
+                                                        </StackPanel>
+                                                        <Button.Flyout>
+                                                            <Flyout Placement="LeftEdgeAlignedTop">
+                                                                <Border Background="#F70B1214" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="16" Padding="16">
+                                                                    <StackPanel Spacing="10" Width="290">
+                                                                        <TextBlock Text="{Binding Loc.KeyOpenReShadeWith}" FontWeight="Bold" FontSize="13" Foreground="#E2E8F0" />
+                                                                        <ItemsControl ItemsSource="{Binding ReShadeKeys}">
+                                                                            <ItemsControl.ItemsPanel>
+                                                                                <ItemsPanelTemplate>
+                                                                                    <WrapPanel />
+                                                                                </ItemsPanelTemplate>
+                                                                            </ItemsControl.ItemsPanel>
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate>
+                                                                                    <Button Classes="SegmentedTab" Content="{Binding}" Tag="{Binding}" Click="OnChooseReShadeKey"
+                                                                                            Padding="12,6" Margin="0,0,6,6" Cursor="Hand" />
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </Flyout>
+                                                        </Button.Flyout>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+
+                                            <Border Classes="KeyRow" IsVisible="{Binding Advanced.ShowOverlayKey}">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Loc.KeyOverlay}" FontSize="12.5" FontWeight="SemiBold"
+                                                               Foreground="#F1F5F9" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                    <Button Grid.Column="1" Classes="KeyChip" IsEnabled="{Binding Advanced.IsReady}" Cursor="Hand" VerticalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <Border Classes="KeyCap">
+                                                                <TextBlock Text="{Binding SelectedOverlayHotkey}" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Loc.KeyChange}" FontSize="10" FontWeight="Bold" Foreground="#86EFAC" LetterSpacing="0.6" VerticalAlignment="Center" />
+                                                            <PathIcon Data="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" Width="9" Height="9" Foreground="#86EFAC" />
+                                                        </StackPanel>
+                                                        <Button.Flyout>
+                                                            <Flyout Placement="LeftEdgeAlignedTop">
+                                                                <Border Background="#F70B1214" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="16" Padding="16">
+                                                                    <StackPanel Spacing="10" Width="290">
+                                                                        <TextBlock Text="{Binding Loc.KeyOpenOverlayWith}" FontWeight="Bold" FontSize="13" Foreground="#E2E8F0" />
+                                                                        <ItemsControl ItemsSource="{Binding OverlayHotkeys}">
+                                                                            <ItemsControl.ItemsPanel>
+                                                                                <ItemsPanelTemplate>
+                                                                                    <WrapPanel />
+                                                                                </ItemsPanelTemplate>
+                                                                            </ItemsControl.ItemsPanel>
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate>
+                                                                                    <Button Classes="SegmentedTab" Content="{Binding}" Tag="{Binding}" Click="OnChooseOverlayKey"
+                                                                                            Padding="12,6" Margin="0,0,6,6" Cursor="Hand" />
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </Flyout>
+                                                        </Button.Flyout>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+
+                                            <TextBlock Text="{Binding KeysStatus}" IsVisible="{Binding HasKeysStatus}" FontSize="10.5"
+                                                       Foreground="#7CFFC4" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- DLL NAME: the same card as on the sheet above -->
+                                    <Border x:Name="AdvDllNameCard" Background="#0CFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="16" Padding="12,9"
+                                            IsVisible="{Binding IsAdvancedDllNameCardVisible}">
+                                        <StackPanel Spacing="11">
+                                            <Button Classes="EmptyActionBtn" Click="OnToggleAdvDllNamesClicked" Cursor="Hand"
+                                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12,7">
+                                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+                                                    <PathIcon Grid.Column="0" Data="M 6,2 H 14 L 20,8 V 22 H 6 Z M 14,2 V 8 H 20 M 9,13 H 17 M 9,17 H 15"
+                                                              Width="13" Height="13" Foreground="#94A3B8" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Loc.DllNameToggle}" FontSize="11.5" FontWeight="Bold"
+                                                               Foreground="#E2E8F0" VerticalAlignment="Center" />
+                                                    <PathIcon Grid.Column="2" Data="{Binding DllNamesIcon}" Width="11" Height="11"
+                                                              Foreground="#A1A1AA" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Button>
+
+                                            <StackPanel Spacing="12" IsVisible="{Binding IsDllNamesOpen}" Margin="4,0,4,4">
+                                                <TextBlock Text="{Binding Loc.DllNameDesc}" FontSize="11" Foreground="#94A3B8"
+                                                           TextWrapping="Wrap" LineHeight="16" />
+
+                                                <TextBlock Text="{Binding Loc.DllNameVulkanLayer}" IsVisible="{Binding IsEmulatorVulkanLayer}"
+                                                           FontSize="11.5" FontWeight="SemiBold" Foreground="#FCD34D" TextWrapping="Wrap" LineHeight="16" />
+
+                                                <StackPanel Spacing="8" IsVisible="{Binding HasOptiProxy}">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <TextBlock Grid.Column="0" Text="OPTISCALER" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595"
+                                                                   LetterSpacing="0.8" VerticalAlignment="Center" />
+                                                        <Border Grid.Column="1" Classes="DetectChip">
+                                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                <TextBlock Text="{Binding Loc.DllNameCurrent}" Classes="DetectChipText" Opacity="0.7" />
+                                                                <TextBlock Text="{Binding OptiProxyName}" Classes="DetectChipText" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <ComboBox Grid.Column="0" Classes="GlassComboBox" ItemsSource="{Binding OptiProxyNames}"
+                                                                  SelectedItem="{Binding SelectedOptiProxyName, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Stretch" Height="34" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameOptiPickClicked" Cursor="Hand"
+                                                                IsEnabled="{Binding CanApplyDllName}" Padding="14,6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                                        </Button>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Loc.DllNameCustom}" FontSize="10.5" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <Border Grid.Column="0" Classes="DllNameField" Background="#15000000" BorderBrush="#30FFFFFF" BorderThickness="1"
+                                                                CornerRadius="13" Height="34" Padding="10,0,4,0">
+                                                            <Grid ColumnDefinitions="*,Auto">
+                                                                <TextBox Grid.Column="0" Classes="DllNameInput"
+                                                                         Text="{Binding OptiCustomName, Mode=TwoWay}" MaxLength="60"
+                                                                         PlaceholderText="{Binding Loc.DllNamePlaceholder}" VerticalAlignment="Center" />
+                                                                <Border Grid.Column="1" Background="#2200FF88" BorderBrush="#5500FF88" BorderThickness="1"
+                                                                        CornerRadius="9" Padding="10,3" VerticalAlignment="Center">
+                                                                    <TextBlock Text=".dll" FontSize="12.5" FontWeight="Bold" Foreground="#7CFFC4" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+                                                        <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameOptiCustomClicked" Cursor="Hand"
+                                                                IsEnabled="{Binding CanRenameOptiCustom}" Padding="14,6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                                        </Button>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Loc.DllNameTaken}" IsVisible="{Binding IsOptiCustomTaken}"
+                                                               FontSize="11" FontWeight="SemiBold" Foreground="#F87171" TextWrapping="Wrap" />
+                                                </StackPanel>
+
+                                                <Border Height="1" Background="#12FFFFFF">
+                                                    <Border.IsVisible>
+                                                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                            <Binding Path="HasOptiProxy" />
+                                                            <Binding Path="HasReShadeProxy" />
+                                                        </MultiBinding>
+                                                    </Border.IsVisible>
+                                                </Border>
+
+                                                <StackPanel Spacing="8" IsVisible="{Binding HasReShadeProxy}">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <TextBlock Grid.Column="0" Text="RESHADE" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595"
+                                                                   LetterSpacing="0.8" VerticalAlignment="Center" />
+                                                        <Border Grid.Column="1" Classes="DetectChip">
+                                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                <TextBlock Text="{Binding Loc.DllNameCurrent}" Classes="DetectChipText" Opacity="0.7" />
+                                                                <TextBlock Text="{Binding ReShadeProxyName}" Classes="DetectChipText" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <ComboBox Grid.Column="0" Classes="GlassComboBox" ItemsSource="{Binding ReShadeProxyNames}"
+                                                                  SelectedItem="{Binding SelectedReShadeProxyName, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Stretch" Height="34" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameReShadePickClicked" Cursor="Hand"
+                                                                IsEnabled="{Binding CanApplyDllName}" Padding="14,6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                                        </Button>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Loc.DllNameCustom}" FontSize="10.5" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <Border Grid.Column="0" Classes="DllNameField" Background="#15000000" BorderBrush="#30FFFFFF" BorderThickness="1"
+                                                                CornerRadius="13" Height="34" Padding="10,0,4,0">
+                                                            <Grid ColumnDefinitions="*,Auto">
+                                                                <TextBox Grid.Column="0" Classes="DllNameInput"
+                                                                         Text="{Binding ReShadeCustomName, Mode=TwoWay}" MaxLength="60"
+                                                                         PlaceholderText="{Binding Loc.DllNamePlaceholder}" VerticalAlignment="Center" />
+                                                                <Border Grid.Column="1" Background="#2200FF88" BorderBrush="#5500FF88" BorderThickness="1"
+                                                                        CornerRadius="9" Padding="10,3" VerticalAlignment="Center">
+                                                                    <TextBlock Text=".dll" FontSize="12.5" FontWeight="Bold" Foreground="#7CFFC4" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+                                                        <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameReShadeCustomClicked" Cursor="Hand"
+                                                                IsEnabled="{Binding CanRenameReShadeCustom}" Padding="14,6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                                        </Button>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Loc.DllNameTaken}" IsVisible="{Binding IsReShadeCustomTaken}"
+                                                               FontSize="11" FontWeight="SemiBold" Foreground="#F87171" TextWrapping="Wrap" />
+                                                </StackPanel>
+
+                                                <!-- AMD (round 26): the AMD route's payload, version.dll unless renamed -->
+                                                <Border Height="1" Background="#12FFFFFF" IsVisible="{Binding ShowAmdProxySeparator}" />
+
+                                                <StackPanel Spacing="8" IsVisible="{Binding HasAmdProxy}">
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <TextBlock Grid.Column="0" Text="AMD" FontSize="9.5" FontWeight="Bold" Foreground="#7C8595"
+                                                                   LetterSpacing="0.8" VerticalAlignment="Center" />
+                                                        <Border Grid.Column="1" Classes="DetectChip">
+                                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                <TextBlock Text="{Binding Loc.DllNameCurrent}" Classes="DetectChipText" Opacity="0.7" />
+                                                                <TextBlock Text="{Binding AmdProxyName}" Classes="DetectChipText" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <ComboBox Grid.Column="0" Classes="GlassComboBox" ItemsSource="{Binding AmdProxyNames}"
+                                                                  SelectedItem="{Binding SelectedAmdProxyName, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Stretch" Height="34" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameAmdPickClicked" Cursor="Hand"
+                                                                IsEnabled="{Binding CanApplyDllName}" Padding="14,6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                                        </Button>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Loc.DllNameCustom}" FontSize="10.5" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                        <Border Grid.Column="0" Classes="DllNameField" Background="#15000000" BorderBrush="#30FFFFFF" BorderThickness="1"
+                                                                CornerRadius="13" Height="34" Padding="10,0,4,0">
+                                                            <Grid ColumnDefinitions="*,Auto">
+                                                                <TextBox Grid.Column="0" Classes="DllNameInput"
+                                                                         Text="{Binding AmdCustomName, Mode=TwoWay}" MaxLength="60"
+                                                                         PlaceholderText="{Binding Loc.DllNamePlaceholder}" VerticalAlignment="Center" />
+                                                                <Border Grid.Column="1" Background="#2200FF88" BorderBrush="#5500FF88" BorderThickness="1"
+                                                                        CornerRadius="9" Padding="10,3" VerticalAlignment="Center">
+                                                                    <TextBlock Text=".dll" FontSize="12.5" FontWeight="Bold" Foreground="#7CFFC4" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+                                                        <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnRenameAmdCustomClicked" Cursor="Hand"
+                                                                IsEnabled="{Binding CanRenameAmdCustom}" Padding="14,6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Loc.DllNameApply}" FontSize="11" FontWeight="Bold" />
+                                                        </Button>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Loc.DllNameTaken}" IsVisible="{Binding IsAmdCustomTaken}"
+                                                               FontSize="11" FontWeight="SemiBold" Foreground="#F87171" TextWrapping="Wrap" />
+                                                </StackPanel>
+
+                                                <TextBlock Text="{Binding DllNameStatus}" IsVisible="{Binding HasDllNameStatus}" FontSize="11"
+                                                           FontWeight="SemiBold" Foreground="{Binding DllNameStatusBrush}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Live progress -->
+                                    <Border Background="#0CFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="16" Padding="16,13"
+                                            IsVisible="{Binding Advanced.IsBusy}">
+                                        <StackPanel Spacing="9">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Grid.Column="0" Text="{Binding Advanced.StatusText}" FontSize="12" FontWeight="SemiBold" Foreground="#F1F5F9"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Advanced.Progress, StringFormat={}{0:F0}%}" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF" />
+                                            </Grid>
+                                            <ProgressBar Value="{Binding Advanced.Progress}" Minimum="0" Maximum="100" Height="5"
+                                                         Foreground="{Binding MotifAccentBrush}" Background="#20FFFFFF" CornerRadius="3" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- The last run: the headline, the log behind a button -->
+                                    <Border Background="#0CFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="16" Padding="16,12"
+                                            IsVisible="{Binding Advanced.HasResult}">
+                                        <StackPanel Spacing="9">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <TextBlock Grid.Column="0" Text="{Binding Advanced.ResultSummary}" FontSize="11.5" FontWeight="SemiBold"
+                                                           Foreground="#86EFAC" IsVisible="{Binding !Advanced.IsResultError}"
+                                                           TextWrapping="Wrap" LineHeight="18" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="0" Text="{Binding Advanced.ResultSummary}" FontSize="11.5" FontWeight="SemiBold"
+                                                           Foreground="#F87171" IsVisible="{Binding Advanced.IsResultError}"
+                                                           TextWrapping="Wrap" LineHeight="18" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Classes="EmptyActionBtn" Click="OnAdvancedToggleResultClicked" Cursor="Hand"
+                                                        Padding="11,4" VerticalAlignment="Center"
+                                                        IsVisible="{Binding Advanced.HasResultDetails}">
+                                                    <TextBlock Text="{Binding Advanced.ResultToggleText}" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1" />
+                                                </Button>
+                                            </Grid>
+
+                                            <TextBlock Text="{Binding Advanced.ResultText}" IsVisible="{Binding Advanced.IsResultExpanded}"
+                                                       FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" LineHeight="17" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+
+                        <!-- Deep-fried chicken and RenoDX both switched on: said, never prevented -->
+                        <Border Grid.Row="3" Classes="RouteReveal" Classes.Shown="{Binding Advanced.HasConflict}"
+                                IsVisible="{Binding Advanced.HasConflict}"
+                                Margin="26,12,26,0" CornerRadius="16" Padding="16,12" BorderThickness="1" BorderBrush="#66F59E0B"
+                                BoxShadow="0 8 28 0 #33F59E0B">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                    <GradientStop Color="#30F59E0B" Offset="0.0" />
+                                    <GradientStop Color="#16F43F5E" Offset="1.0" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                                <Border Grid.Column="0" Width="38" Height="38" CornerRadius="12" Background="#33F59E0B"
+                                        BorderBrush="#77F59E0B" BorderThickness="1" VerticalAlignment="Center">
+                                    <PathIcon Data="F1 M 12,2.5 L 1.5,21 H 22.5 Z M 11,9 H 13 V 15 H 11 Z M 11,17 H 13 V 19 H 11 Z"
+                                              Width="17" Height="17" Foreground="#FCD34D" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Loc.AdvConflictTitle}" FontSize="13" FontWeight="Bold" Foreground="#FDE68A" />
+                                    <TextBlock Text="{Binding Loc.AdvConflictText}" FontSize="11.5" Foreground="#EADFC4"
+                                               TextWrapping="Wrap" LineHeight="17" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Actions -->
+                        <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="9" Margin="26,14,26,22">
+                            <Button Grid.Column="0" Classes="AppleSecondaryBtn" Click="OnOpenGameFolderClicked" Cursor="Hand"
+                                    IsEnabled="{Binding Advanced.IsReady}" Padding="12,9"
+                                    ToolTip.Tip="{Binding Loc.OpenGameFolder}">
+                                <PathIcon Data="M 10,4 H 4 C 2.89,4 2,4.89 2,6 V 18 C 2,19.1 2.89,20 4,20 H 20 C 21.1,20 22,19.1 22,18 V 8 C 22,6.89 21.1,6 20,6 H 12 L 10,4 Z"
+                                          Width="13" Height="13" Foreground="#CBD5E1" VerticalAlignment="Center" />
+                            </Button>
+
+                            <Button Grid.Column="1" Classes="AppleSecondaryBtn" Click="OnChangeExecutableClicked" Cursor="Hand"
+                                    IsEnabled="{Binding Advanced.IsReady}" Content="{Binding Loc.ChangeExe}" ToolTip.Tip="{Binding Loc.ChangeExeTip}" />
+
+                            <Button Grid.Column="2" Classes="AppleSecondaryBtn" Click="OnLaunchTargetClicked" Cursor="Hand"
+                                    IsEnabled="{Binding Advanced.IsReady}" ToolTip.Tip="Run this game now">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <PathIcon Data="M 8,5 V 19 L 19,12 Z" Width="11" Height="11" Foreground="#86EFAC" VerticalAlignment="Center" />
+                                    <TextBlock Text="Launch" FontSize="12" FontWeight="SemiBold" Foreground="#F1F5F9" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button Grid.Column="4" Classes="AppleDangerBtn" Click="OnAdvancedRemoveAllClicked" Cursor="Hand"
+                                    IsVisible="{Binding Advanced.CanRemoveAll}" IsEnabled="{Binding Advanced.IsReady}"
+                                    Content="{Binding Loc.AdvRemoveAll}" ToolTip.Tip="{Binding Loc.AdvRemoveAllTip}" />
+
+                            <Button Grid.Column="5" Classes="ApplePrimaryBtn" Click="OnAdvancedApplyClicked" Cursor="Hand"
+                                    IsEnabled="{Binding Advanced.CanApply}" ToolTip.Tip="{Binding Loc.AdvApplyTip}">
+                                <TextBlock Text="{Binding Advanced.ApplyText}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" MaxWidth="240" />
+                            </Button>
                         </Grid>
                     </Grid>
                 </Border>
@@ -3945,7 +5176,7 @@
 
                     <Button Classes="GlassLinkBtn Donate" Click="OnSupportPromptDonateClicked" Cursor="Hand"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            ToolTip.Tip="ko-fi.com/nodix">
+                            ToolTip.Tip="patreon.com/c/nodixtech">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <PathIcon Data="M 12,21.35 L 10.55,20.03 C 5.4,15.36 2,12.28 2,8.5 2,5.42 4.42,3 7.5,3 9.24,3 10.91,3.81 12,5.09 13.09,3.81 14.76,3 16.5,3 19.58,3 22,5.42 22,8.5 22,12.28 18.6,15.36 13.45,20.04 Z"
                                       Width="15" Height="15" Foreground="#FF8FB1" VerticalAlignment="Center" />
@@ -4347,10 +5578,12 @@
                                                         <Button Classes="RouteChip" Click="OnEditOwnStatusClicked" Tag="working" Cursor="Hand" Padding="9,3">
                                                             <TextBlock Text="WORKING" FontSize="9" FontWeight="Bold" Foreground="#86EFAC" />
                                                         </Button>
-                                                        <Button Classes="RouteChip" Click="OnEditOwnStatusClicked" Tag="mixed" Cursor="Hand" Padding="9,3">
+                                                        <Button Classes="RouteChip" Click="OnEditOwnStatusClicked" Tag="mixed" Cursor="Hand" Padding="9,3"
+                                                                IsVisible="{Binding CanChangeToMixedOrBroken}">
                                                             <TextBlock Text="MIXED" FontSize="9" FontWeight="Bold" Foreground="#FCD34D" />
                                                         </Button>
-                                                        <Button Classes="RouteChip" Click="OnEditOwnStatusClicked" Tag="broken" Cursor="Hand" Padding="9,3">
+                                                        <Button Classes="RouteChip" Click="OnEditOwnStatusClicked" Tag="broken" Cursor="Hand" Padding="9,3"
+                                                                IsVisible="{Binding CanChangeToMixedOrBroken}">
                                                             <TextBlock Text="NOT WORKING" FontSize="9" FontWeight="Bold" Foreground="#FCA5A5" />
                                                         </Button>
                                                     </StackPanel>
@@ -4373,7 +5606,34 @@
                                                                 CornerRadius="8" Padding="9,3" IsVisible="{Binding HasOverlay}">
                                                             <TextBlock Text="OVERLAY" FontSize="10.5" FontWeight="Bold" Foreground="#7CFFC4" />
                                                         </Border>
+                                                        <Border Background="#1FA78BFA" BorderBrush="#55A78BFA" BorderThickness="1"
+                                                                CornerRadius="8" Padding="9,3" IsVisible="{Binding IsAdvanced}">
+                                                            <TextBlock Text="{Binding $parent[Window].DataContext.Loc.AdvBadge}"
+                                                                       FontSize="10.5" FontWeight="Bold" Foreground="#DDD6FE" />
+                                                        </Border>
+                                                        <Border Background="#1FF59E0B" BorderBrush="#55F59E0B" BorderThickness="1"
+                                                                CornerRadius="8" Padding="9,3" IsVisible="{Binding HasExtra}"
+                                                                ToolTip.Tip="{Binding $parent[Window].DataContext.Loc.AdvShareExtraTip}">
+                                                            <TextBlock Text="EXTRA" FontSize="10.5" FontWeight="Bold" Foreground="#FCD34D" />
+                                                        </Border>
                                                     </StackPanel>
+
+                                                    <!-- An advanced install: the parts it was made of -->
+                                                    <ItemsControl ItemsSource="{Binding PartNames}" IsVisible="{Binding HasParts}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate>
+                                                                <WrapPanel />
+                                                            </ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Background="#10FFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="7"
+                                                                        Padding="7,2" Margin="0,0,5,5">
+                                                                    <TextBlock Text="{Binding}" FontSize="10" FontWeight="SemiBold" Foreground="#CBD5E1" />
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
 
                                                     <TextBlock Text="{Binding Body}" FontSize="12.5"
                                                                Foreground="#E2E8F0" TextWrapping="Wrap" LineHeight="19">
@@ -4618,11 +5878,15 @@
                                     <Button Classes="SegmentedTab" Classes.Active="{Binding Community.IsStatusWorking}"
                                             Click="OnComposerStatusClicked" Tag="working" Content="{Binding Loc.StatusWorking}" />
                                     <Button Classes="SegmentedTab" Classes.Active="{Binding Community.IsStatusMixed}"
+                                            IsEnabled="{Binding Community.CanComposeMixedOrBroken}"
                                             Click="OnComposerStatusClicked" Tag="mixed" Content="{Binding Loc.StatusMixed}" />
                                     <Button Classes="SegmentedTab" Classes.Active="{Binding Community.IsStatusBroken}"
+                                            IsEnabled="{Binding Community.CanComposeMixedOrBroken}"
                                             Click="OnComposerStatusClicked" Tag="broken" Content="{Binding Loc.StatusBroken}" />
                                 </UniformGrid>
                             </Border>
+                            <TextBlock Text="{Binding Loc.AdvShareOnlyWorking}" IsVisible="{Binding Community.IsComposeAdvanced}"
+                                       FontSize="11" Foreground="#C4B5FD" TextWrapping="Wrap" LineHeight="16" />
                         </StackPanel>
 
                         <!-- The route, read straight off the install manifest -->
@@ -4636,6 +5900,36 @@
                                 <Border Background="#12FFFFFF" BorderBrush="#20FFFFFF" BorderThickness="1" CornerRadius="9" Padding="11,5">
                                     <TextBlock Text="{Binding Community.ComposeTargetLabel}" FontSize="11.5" FontWeight="Bold" Foreground="#94A3B8" />
                                 </Border>
+                                <Border Background="#1FA78BFA" BorderBrush="#55A78BFA" BorderThickness="1" CornerRadius="9" Padding="11,5"
+                                        IsVisible="{Binding Community.IsComposeAdvanced}">
+                                    <TextBlock Text="{Binding Loc.AdvBadge}" FontSize="11.5" FontWeight="Bold" Foreground="#DDD6FE" />
+                                </Border>
+                                <Border Background="#1FF59E0B" BorderBrush="#55F59E0B" BorderThickness="1" CornerRadius="9" Padding="11,5"
+                                        IsVisible="{Binding Community.IsComposeExtra}" ToolTip.Tip="{Binding Loc.AdvShareExtraTip}">
+                                    <TextBlock Text="EXTRA" FontSize="11.5" FontWeight="Bold" Foreground="#FCD34D" />
+                                </Border>
+                            </StackPanel>
+
+                            <!-- An advanced install lists what it is made of. The user's own
+                                 extras, add-ons and plugins are theirs and are not listed. -->
+                            <StackPanel Spacing="6" IsVisible="{Binding Community.HasComposeParts}">
+                                <TextBlock Text="{Binding Loc.AdvShareParts}" FontSize="9.5" FontWeight="Bold"
+                                           Foreground="#7C8595" LetterSpacing="0.6" />
+                                <ItemsControl ItemsSource="{Binding Community.ComposePartNames}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#12FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="8"
+                                                    Padding="8,2" Margin="0,0,5,5">
+                                                <TextBlock Text="{Binding}" FontSize="10.5" FontWeight="SemiBold" Foreground="#CBD5E1" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </StackPanel>
 

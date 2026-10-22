@@ -34,6 +34,10 @@ RWTexture2D<uint> gResid : register(u6);
 // valid). After them, BlockMain's fields: four per kBlock x kBlock block
 // (BlockAt).
 RWStructuredBuffer<float4> gTiles : register(u7);
+// The frame CSMain drew (alpha: how sure it was of each pixel), and the frame
+// DespeckleMain makes of it - the one shown.
+Texture2D<float4> gDrawn : register(t8);
+RWTexture2D<float4> gFinal : register(u8);
 // Motion texels per tile side, per block side, and how many rounds BlockMain
 // runs. The host sizes gTiles and dispatches from them (flow_mfg.inl).
 static const uint kTile = 8;
@@ -81,7 +85,10 @@ float2 Motion(float2 uv, float2 scale, bool reverse) {
 // sides: allow following the surface from one end when the other is under
 // the HUD. The crossing search passes false - it only takes a candidate
 // matched at both ends, so a one-sided answer could never win there.
-float4 Follow(float2 uv, float2 texel, float2 scale, float2 m, bool sides) {
+// side (round 26): where the colour came from - 0 both ends mixed, 1 the
+// previous frame's end alone, 2 the current frame's.
+float4 FollowSide(float2 uv, float2 texel, float2 scale, float2 m, bool sides, out uint side) {
+    side = 0;
     float2 p = uv + gT * m * texel, c = uv - (1.0 - gT) * m * texel;
     bool vp = Inside(p, texel), vc = Inside(c, texel);
     float3 cp = gPrev.SampleLevel(gLin, p, 0).rgb;
@@ -99,7 +106,7 @@ float4 Follow(float2 uv, float2 texel, float2 scale, float2 m, bool sides) {
     }
     // A valid endpoint can fill a newly uncovered image border. Never drag
     // a clamped border texel into the image, and never crossfade an occlusion.
-    if (!vp || !vc) return float4(vp ? cp : cc, (vp || vc) ? .15 : 0);
+    if (!vp || !vc) { side = vp ? 1u : 2u; return float4(vp ? cp : cc, (vp || vc) ? .15 : 0); }
     // One end of this path under the HUD: the colour there is the HUD's, not
     // the surface's, and fading between the two dragged the HUD out over the
     // scene - a band as wide as the motion, the widest at a low frame rate.
@@ -115,6 +122,7 @@ float4 Follow(float2 uv, float2 texel, float2 scale, float2 m, bool sides) {
             hideC = Max3(abs(cc - gPrev.SampleLevel(gLin, c, 0).rgb)) < .01 && PanelAt(c);
         }
         if (hideP != hideC) {
+            side = hideP ? 2u : 1u;
             float trust = gBoth != 0
                 ? .6 * (1.0 - smoothstep(1.0, reach, length((hideP ? back : forward) - m))) : .45;
             return float4(hideP ? cc : cp, trust);
@@ -122,8 +130,13 @@ float4 Follow(float2 uv, float2 texel, float2 scale, float2 m, bool sides) {
     }
     return float4(lerp(cp, cc, gT), confidence);
 }
+float4 Follow(float2 uv, float2 texel, float2 scale, float2 m, bool sides) {
+    uint side;
+    return FollowSide(uv, texel, scale, m, sides, side);
+}
 
-// ---- Once per pair: the HUD ---------------------------------------------
+)hlsl"
+R"hlsl(// ---- Once per pair: the HUD ---------------------------------------------
 // A HUD stands still on the screen while the scene under it moves, and the
 // motion estimate cannot be trusted on it: it sees a big panel as still and
 // gives thin text the motion of the scene around it. So a pixel counts as
@@ -189,6 +202,16 @@ void HudMain(uint3 id : SV_DispatchThreadID) {
         // A HUD that changes (a counter ticking over) keeps its place;
         // something that keeps changing without moving lets go slowly.
         bool explained = back >= 0 && back < min(.04, change * .4);
+        // Something passing under a see-through panel (a player under the
+        // radar) changes it too, but as its own motion says - the tracker's,
+        // which found it - not the scene's. That is an object in the scene
+        // layer: it lets go at once. A counter's digits change without
+        // moving, so no motion explains them and the panel keeps them.
+        float2 passing = gTrackMv[clamp(int2(uv * float2(mw, mh)), int2(0, 0), int2(mw - 1, mh - 1))];
+        if (!explained && all(isfinite(passing)) && dot(passing * scale, passing * scale) >= 2.25) {
+            float moved = Miss(now, uv, texel, passing * scale, false);
+            explained = moved >= 0 && moved < min(.04, change * .4);
+        }
         gHud[id.xy] = 2.0 * stood + (explained ? score * .2 : max(0.0, score - .15));
         return;
     }
@@ -212,14 +235,40 @@ void HudMain(uint3 id : SV_DispatchThreadID) {
             side[e] = Max3(abs(sideNow - sideBefore)) > .06 && dot(edgeNow, edgeBefore) > 0 &&
                       min(Max3(abs(edgeNow)), Max3(abs(edgeBefore))) > .12;
         }
-        bool anchored = (side[0] && side[1]) || (side[2] && side[3]) ||
-            ((backFails || aheadFails) && (side[0] || side[1] || side[2] || side[3]));
+        bool anchored = (side[0] && side[1]) || (side[2] && side[3]);
+        // A failed scene warp also describes the silhouette of a character
+        // followed by the camera. It is not sufficient evidence of HUD.
+        // Require a narrow, persistent stroke with contrast on BOTH sides;
+        // one-sided world/character edges must remain in the scene layer.
+        bool stroke[4];
+        [unroll] for (int sidx = 0; sidx < 4; ++sidx) {
+            int2 q = clamp(int2(id.xy) + int2(float2(around[sidx]) * 2.0 * unit),
+                           int2(0, 0), int2(gW - 1, gH - 1));
+            float3 a = now - gCur[q].rgb, b = before - gPrev[q].rgb;
+            stroke[sidx] = min(Max3(abs(a)), Max3(abs(b))) > .10 && dot(a, b) > 0;
+        }
+        bool narrow = (stroke[0] && stroke[1]) || (stroke[2] && stroke[3]);
+        // Repeated letters may match in one warp direction. Preserve that
+        // thin stroke when the other direction fails and scenery changes
+        // beside it; the two-sided width test still excludes silhouettes.
+        anchored = anchored || (narrow && (backFails || aheadFails) &&
+                                 (side[0] || side[1] || side[2] || side[3]));
         // The tracker (which runs first) set this texel still where the
         // estimate had it moving - standing still is what carries its pixels -
         // while the scene around it moves: the plainest evidence the motion
         // vectors give of something fixed to the screen.
         float2 tracked = gTrackMv[clamp(int2(uv * float2(mw, mh)), int2(0, 0), int2(mw - 1, mh - 1))];
         bool pinned = all(isfinite(tracked)) && dot(tracked * scale, tracked * scale) < .25 && dot(own, own) >= 2.25;
+        // Only where standing still says something: on a flat patch - the
+        // grass seen through a see-through panel - standing still carries the
+        // pixels as well as anything does. Held there, the verdict flooded the
+        // whole radar, and a player walking under it froze and vanished.
+        float detail = 0;
+        [unroll] for (int t = 0; t < 4; ++t) {
+            int2 q = clamp(int2(id.xy) + around[t] * 2, int2(0, 0), int2(gW - 1, gH - 1));
+            detail = max(detail, Max3(abs(now - gCur[q].rgb)));
+        }
+        pinned = pinned && (detail > .06 || back > .04 || ahead > .04);
         // Its own motion moves it clearly apart from the scene and carries it
         // and the pixels beside it: part of an object the camera follows - a
         // ball, the player with it - still on the screen for a moment, not
@@ -254,7 +303,17 @@ void HudMain(uint3 id : SV_DispatchThreadID) {
             carried = worst >= 0 && worst < .06 && shown >= 2;
         }
         if (carried) score = max(0.0, score - .25);
-        else if (fails || anchored || pinned) score = min(1.0, score + .5);
+        // A HUD stays put pair after pair; a player the camera follows only
+        // looks still for a moment - his legs, his shirt, the lag of the
+        // camera change him again the pair after. So evidence counts only from
+        // a pixel that has stood still two pairs running (stood counts this
+        // one). Held from one still pair, the followed player froze and
+        // the search skipped him (LockedAt): at 7.5 FPS, 7.6% of him held
+        // as HUD, 2.5% now; his error 23.3 -> 22.0, the other players' at
+        // 15 FPS 9.7 -> 9.3.
+        else if ((stood >= 2 || score > 0) && (anchored || (narrow && (fails || pinned))))
+            score = min(1.0, score + .5);
+        else score = max(0.0, score - .25);
     }
     gHud[id.xy] = 2.0 * stood + score;
 }
@@ -807,7 +866,28 @@ void BlockMain(uint3 gid : SV_GroupID, uint index : SV_GroupIndex) {
         candidate = EstimateAt(corner + kInside[index - 14], reverse, true, scale); penalty = .002; used = first;
     } else if (index >= 21 && index <= 28) {
         candidate = mine + kNudge[index - 21] * (first ? 2.0 : 1.0) * scale; penalty = .008;
-    } else if (index > 28) used = false;
+    } else if (index == 29 || index == 30) {
+        // The motion this place had one pair ago - the temporal half of 3-D
+        // recursive search. FixMain's field still holds the last pair's while
+        // the rounds run (it is written after them), and movement carries on:
+        // a player running, a pan, the ball in flight. Where the estimate
+        // lost a large fast object (a player 100 px a pair at 7.5 FPS), this
+        // is what finds it. 29: the field at this place; 30: at the place the
+        // object came from (current -> previous, one step along it). The
+        // other direction reads the same field backwards. Not after a restart
+        // (gAccum < 0): the field is from before it.
+        used = first && gAccum >= 0;
+        if (used) {
+            int2 limit = int2(mw - 1, mh - 1);
+            float2 last = Finite(gFixMv[clamp(middle, int2(0, 0), limit)]);
+            if (index == 29) candidate = (reverse ? -last : last) * scale;
+            else {
+                int2 from = clamp(middle + int2(round(last)), int2(0, 0), limit);
+                candidate = (reverse ? Finite(gFixReverse[from]) : Finite(gFixMv[from])) * scale;
+            }
+            penalty = .004;
+        }
+    } else if (index > 30) used = false;
     float cost = used ? WindowCost(candidate, reverse) : 1e30;
     if (cost < 0) cost = index == 0 ? 0 : 1e30;    // nothing to judge by: stay
     cost += penalty;
@@ -867,6 +947,112 @@ void TexelMain(uint3 id : SV_DispatchThreadID) {
 }
 )hlsl"
 R"hlsl(
+// ---- Once per pair, after FixMain: where the crossing search can find anything
+// Draw's crossing search (round 26) takes a surface only when it moves apart
+// from the scene around by more than a few pixels, and every motion it reads -
+// its rings, SceneMotion's votes - is a bilinear mix of the repaired field's
+// texels within its reach, never outside their range. Where that range is
+// narrower than the search's threshold nothing can pass it: Draw skips the
+// search there and the frame comes out exactly the same. Over a camera pan, a
+// still or a slow scene that is most of the screen, and the search was half
+// of every frame in between (1.1 of 2.1 ms at 1440p on an RTX 3060,
+// tests/flow_cost.py) - more at a low frame rate, where its rings widen.
+// Two entries per tile (kTile motion texels) after the block search's: the
+// range of the tile's own texels in both fields (min.xy, max.xy, motion
+// texels, the reverse field turned the way Motion() reads it), then that range
+// over every tile the search can reach from it.
+uint RangeAt(int2 tile, uint which) {
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    uint2 t = uint2((mw + kTile - 1) / kTile, (mh + kTile - 1) / kTile);
+    uint2 b = uint2((mw + kBlock - 1) / kBlock, (mh + kBlock - 1) / kBlock);
+    uint base = t.x * t.y * 2 + b.x * b.y * 4;
+    uint2 c = uint2(clamp(tile, int2(0, 0), int2(t) - 1));
+    return base + which * t.x * t.y + c.y * t.x + c.x;
+}
+// How far the search and SceneMotion read from a pixel, in motion texels: the
+// widest ring (8 x 8), SceneMotion's 48 pixels (at 720p), and the bilinear
+// footprint.
+float SearchReach(float2 scale) {
+    float unit = max(1.0, gH / 720.0);
+    return max(64.0, 48.0 * unit / min(scale.x, scale.y)) + 2.0;
+}
+groupshared float4 gsRange[kTile * kTile];
+[numthreads(kTile, kTile, 1)]
+void RangeMain(uint3 gid : SV_GroupID, uint3 tid : SV_GroupThreadID, uint index : SV_GroupIndex) {
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    uint2 p = gid.xy * kTile + tid.xy;
+    float4 r = float4(1e30, 1e30, -1e30, -1e30);
+    if (p.x < mw && p.y < mh) {
+        float2 f = gMv.Load(int3(p, 0)), b = -gReverse.Load(int3(p, 0));
+        // Motion() reads a value that is not finite as no motion.
+        if (!all(isfinite(f))) f = 0;
+        if (!all(isfinite(b))) b = 0;
+        r = float4(min(f, b), max(f, b));
+    }
+    gsRange[index] = r;
+    GroupMemoryBarrierWithGroupSync();
+    [unroll] for (uint n = kTile * kTile / 2; n > 0; n >>= 1) {
+        if (index < n) {
+            float4 o = gsRange[index + n];
+            gsRange[index] = float4(min(gsRange[index].xy, o.xy), max(gsRange[index].zw, o.zw));
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    if (index == 0) gTiles[RangeAt(int2(gid.xy), 0)] = gsRange[0];
+}
+[numthreads(8, 8, 1)]
+void ReachMain(uint3 id : SV_DispatchThreadID) {
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    uint2 t = uint2((mw + kTile - 1) / kTile, (mh + kTile - 1) / kTile);
+    if (id.x >= t.x || id.y >= t.y) return;
+    float2 scale = float2(gW, gH) / float2(mw, mh);
+    int reach = int(ceil(SearchReach(scale) / float(kTile)));
+    float4 r = float4(1e30, 1e30, -1e30, -1e30);
+    for (int y = -reach; y <= reach; ++y)
+    for (int x = -reach; x <= reach; ++x) {
+        int2 q = int2(id.xy) + int2(x, y);
+        if (any(q < 0) || any(q >= int2(t))) continue;
+        float4 o = gTiles[RangeAt(q, 0)];
+        r = float4(min(r.xy, o.xy), max(r.zw, o.zw));
+    }
+    gTiles[RangeAt(int2(id.xy), 1)] = r;
+}
+// Can the crossing search find anything from this pixel? With a margin of a
+// quarter pixel under its threshold.
+bool SearchMayFind(float2 uv, float2 scale) {
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    float4 r = gTiles[RangeAt(int2(uv * float2(mw, mh)) / int(kTile), 1)];
+    if (!(r.x <= r.z) || !(r.y <= r.w)) return true;   // no range kept: search as before
+    float apart = 4.0 * max(1.0, gH / 720.0);
+    return length((r.zw - r.xy) * scale) >= apart - .25;
+}
+// Where a HUD verdict is (round 26): one entry per 8x8 pixels of the picture
+// after RangeMain's, 1 when a verdict (HudOf >= .5) lies in it or a pixel
+// around it - as far as Layered looks. Anywhere else Layered finds nothing,
+// and the frames in between do not ask it.
+uint2 HudTiles() { return uint2((gW + 7) / 8, (gH + 7) / 8); }
+uint HudTileAt(int2 tile) {
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    uint2 t = uint2((mw + kTile - 1) / kTile, (mh + kTile - 1) / kTile);
+    uint2 b = uint2((mw + kBlock - 1) / kBlock, (mh + kBlock - 1) / kBlock);
+    uint2 n = HudTiles();
+    uint2 c = uint2(clamp(tile, int2(0, 0), int2(n) - 1));
+    return t.x * t.y * 4 + b.x * b.y * 4 + c.y * n.x + c.x;
+}
+[numthreads(8, 8, 1)]
+void HudTileMain(uint3 id : SV_DispatchThreadID) {
+    uint2 n = HudTiles();
+    if (id.x >= n.x || id.y >= n.y) return;
+    int2 last = int2(gW - 1, gH - 1);
+    bool any = false;
+    for (int y = -1; y <= 8; ++y)
+    for (int x = -1; x <= 8; ++x)
+        any = any || HudOf(gHud[clamp(int2(id.xy) * 8 + int2(x, y), int2(0, 0), last)]) >= .5;
+    gTiles[HudTileAt(int2(id.xy))] = float4(any ? 1.0 : 0.0, 0, 0, 0);
+}
+bool HudNearAt(uint2 pixel) { return gTiles[HudTileAt(int2(pixel / 8))].x > .5; }
+)hlsl"
+R"hlsl(
 // ---- Every frame in between ------------------------------------------------
 // Beside the HUD - its anti-aliased edge, a text shadow, a see-through panel -
 // a pixel is part HUD and part scene: colour = still layer + k x scene. Both
@@ -903,12 +1089,12 @@ uint Layered(uint2 id, float2 uv, float2 texel, float2 s, float3 before, float3 
 }
 
 // The scene's own motion around a place: a vector median of the motion there
-// and on a ring 24 and 48 pixels out (at 720p) - far enough to reach past a
+// and on a ring 64 and 128 pixels out (at 720p) - far enough to reach past a
 // player or a ball, so it is the pitch's motion, not theirs.
 float2 SceneMotion(float2 uv, float2 texel, float2 scale) {
     float unit = max(1.0, gH / 720.0);
-    const float2 ring[8] = {float2(24,0),float2(-24,0),float2(0,24),float2(0,-24),
-        float2(48,48),float2(-48,48),float2(48,-48),float2(-48,-48)};
+    const float2 ring[8] = {float2(64,0),float2(-64,0),float2(0,64),float2(0,-64),
+        float2(128,128),float2(-128,128),float2(128,-128),float2(-128,-128)};
     float2 votes[9];
     votes[0] = Motion(uv, scale, false);
     [unroll] for (int i = 0; i < 8; ++i) votes[i + 1] = Motion(uv + ring[i] * unit * texel, scale, false);
@@ -922,34 +1108,92 @@ float2 SceneMotion(float2 uv, float2 texel, float2 scale) {
     return scene;
 }
 
-[numthreads(8, 8, 1)]
-void CSMain(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= gW || id.y >= gH) return;
-    float4 p0 = gPrev[id.xy], c0 = gCur[id.xy];
-    if (gT >= 1) { gDst[id.xy] = c0; return; }
-    if (gT <= 0) { gDst[id.xy] = p0; return; }
+)hlsl"
+R"hlsl(
+// The scenery's motion beside a layer that stands (round 25): the vector
+// median of the moving votes on two rings, 24 and 48 pixels out (at 720p) -
+// beside a third-person character half of any ring lands on the character,
+// and SceneMotion's median of all the votes came out still there.
+float2 MovingScene(float2 uv, float2 texel, float2 scale) {
+    float unit = max(1.0, gH / 720.0);
+    const float2 dirs[8] = {float2(1,0),float2(-1,0),float2(0,1),float2(0,-1),
+        float2(.707,.707),float2(-.707,.707),float2(.707,-.707),float2(-.707,-.707)};
+    float2 votes[16];
+    uint n = 0;
+    [unroll] for (int r = 0; r < 2; ++r)
+    [unroll] for (int i = 0; i < 8; ++i) {
+        float2 v = Motion(uv + dirs[i] * (24.0 * (r + 1)) * unit * texel, scale, false);
+        if (dot(v, v) >= 4.0) votes[n++] = v;
+    }
+    if (n == 0) return 0;
+    float2 scene = votes[0];
+    float lowest = 1e30;
+    for (uint a = 0; a < n; ++a) {
+        float cost = 0;
+        for (uint b = 0; b < n; ++b) { float2 d = abs(votes[a] - votes[b]); cost += d.x + d.y; }
+        if (cost < lowest) { lowest = cost; scene = votes[a]; }
+    }
+    return scene;
+}
+
+// The frame at gT is made in three steps (round 26), shared by the full
+// drawing (CSMain) and performance mode (FastMain, which decides lightly):
+//   HudLayer  how much of the pixel is HUD, drawn as it stands
+//   Decide    which motion carries the pixel, and from which end
+//   Finish    the colour from that choice, the still and HUD-edge rules
+// A choice: the colour and how sure it is (best), the motion and the end it
+// came from (Follow's side), and whether a surface was found crossing.
+struct Choice { float4 best; float2 move; uint side; bool crossing; };
+
+// Inverse lookup can bounce across a motion boundary: foreground -> wall
+// -> foreground. The last iterate is not necessarily the valid surface.
+// Keep the direct hypothesis too, and judge it by the same two endpoints.
+Choice Resolve(float2 uv, float2 texel, float2 scale, bool reverse, uint iterations) {
+    float2 original = Motion(uv, scale, reverse), m = original;
+    [unroll] for (uint i = 0; i < iterations; ++i)
+        m = Motion(uv + (reverse ? gT : -(1.0 - gT)) * m * texel, scale, reverse);
+    Choice q;
+    q.best = FollowSide(uv, texel, scale, m, true, q.side);
+    q.move = m; q.crossing = false;
+    if (q.best.w < .9 && length(original - m) > .5) {
+        uint side;
+        float4 direct = FollowSide(uv, texel, scale, original, true, side);
+        if (direct.w > q.best.w) { q.best = direct; q.move = original; q.side = side; }
+    }
+    return q;
+}
+
+float HudLayer(uint2 id, float4 p0, float4 c0, out float still, out float3 overlay, out float state) {
     // The HUD is drawn as it stands - from the nearer real frame when it
     // changed (a counter ticking over) - never moved with the scene.
-    float still = Max3(abs(p0.rgb - c0.rgb));
-    float3 overlay = still < .02 ? c0.rgb : (gT < .5 ? p0.rgb : c0.rgb);
-    float state = gHud[id.xy];
-    float layer = smoothstep(.3, .7, HudOf(state));
-    if (layer >= 1) { gDst[id.xy] = float4(overlay, c0.a); return; }
-    float2 size = float2(gW, gH), texel = 1.0 / size;
-    float2 uv = (float2(id.xy) + .5) * texel;
-    uint mw, mh; gMv.GetDimensions(mw, mh);
-    float2 scale = size / float2(mw, mh);
-    float2 m = Motion(uv, scale, false);
-    [unroll] for (int i = 0; i < 2; ++i)
-        m = Motion(uv - (1.0 - gT) * m * texel, scale, false);
-    float4 best = Follow(uv, texel, scale, m, true);
-    float2 bestMove = m;
+    still = Max3(abs(p0.rgb - c0.rgb));
+    overlay = still < .02 ? c0.rgb : (gT < .5 ? p0.rgb : c0.rgb);
+    state = gHud[id];
+    // A HUD is strokes and panels: a verdict with fewer than two others around
+    // it is a speckle of the scene taken for HUD (a letter of a name tag that
+    // moves with its player, a texel of grass) and is drawn as scene. Drawn
+    // still, such pixels stood out of the moving picture one by one.
+    float hud = HudOf(state);
+    if (hud >= .5) {
+        uint company = 0;
+        [unroll] for (int y = -1; y <= 1; ++y)
+        [unroll] for (int x = -1; x <= 1; ++x)
+            if (x != 0 || y != 0)
+                company += HudOf(gHud[clamp(int2(id) + int2(x, y), int2(0, 0), int2(gW - 1, gH - 1))]) >= .5 ? 1u : 0u;
+        if (company < 2) hud = 0;
+    }
+    return smoothstep(.3, .7, hud);
+}
+
+Choice Decide(uint2 id, float2 uv, float2 texel, float2 scale, float still) {
+    float2 size = float2(gW, gH);
+    Choice initial = Resolve(uv, texel, scale, false, 2);
+    uint bestSide = initial.side;
+    float4 best = initial.best;
+    float2 bestMove = initial.move;
     if (gBoth != 0) {
-        float2 f = Motion(uv, scale, true);
-        [unroll] for (int j = 0; j < 2; ++j)
-            f = Motion(uv + gT * f * texel, scale, true);
-        float4 candidate = Follow(uv, texel, scale, f, true);
-        if (candidate.w > best.w) { best = candidate; bestMove = f; }
+        Choice candidate = Resolve(uv, texel, scale, true, 2);
+        if (candidate.best.w > best.w) { best = candidate.best; bestMove = candidate.move; bestSide = candidate.side; }
     }
     // At a boundary, test actual neighbouring vectors instead of averaging
     // foreground and background into a motion belonging to neither object.
@@ -957,8 +1201,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const float2 offsets[4] = {float2(-4,0),float2(4,0),float2(0,-4),float2(0,4)};
         [loop] for (int k = 0; k < 4; ++k) {
             float2 candidateMv = Motion(uv + offsets[k] * texel * scale, scale, false);
-            float4 candidate = Follow(uv, texel, scale, candidateMv, true);
-            if (candidate.w > best.w) { best = candidate; bestMove = candidateMv; }
+            uint side;
+            float4 candidate = FollowSide(uv, texel, scale, candidateMv, true, side);
+            if (candidate.w > best.w) { best = candidate; bestMove = candidateMv; bestSide = side; }
         }
     }
     // A small object can cross a pixel that was background in BOTH inputs.
@@ -972,8 +1217,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     // the ball, won as the surface in front, and painted grass over the ball
     // (lost in one generated frame of eight on a broadcast-style football
     // camera; none now).
+    // Only where the search can find anything (RangeMain) - the same frame.
     bool crossing = false;
-    if (gBoth != 0) {
+    if (gBoth != 0 && SearchMayFind(uv, scale)) {
         const float2 ring[8] = {float2(1,0),float2(-1,0),float2(0,1),float2(0,-1),
             float2(.707,.707),float2(-.707,.707),float2(.707,-.707),float2(-.707,-.707)};
         float2 scene = SceneMotion(uv, texel, scale);
@@ -991,7 +1237,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         [loop] for (int r = 0; r < 8; ++r) {
             float2 moving = Motion(uv + ring[r] * (radius * 8.0) * texel * scale, scale, direction != 0);
             if (length(moving - scene) > max(bestLength + 1.0, apart)) {
-                float4 candidate = Follow(uv, texel, scale, moving, false);
+                uint side;
+                float4 candidate = FollowSide(uv, texel, scale, moving, false, side);
                 // A surface moving apart from the scene that matches at both
                 // of its ends passes in front of this pixel: the background
                 // behind a ball is seen at both ends as well, so a perfect
@@ -999,12 +1246,62 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                 // hollow, a ring of yellow around grass. Among crossings, the
                 // surer one.
                 if (candidate.w > .9 && (!crossing || candidate.w > best.w)) {
-                    best = candidate; bestMove = moving; bestLength = length(moving - scene); crossing = true;
+                    best = candidate; bestMove = moving; bestSide = side; bestLength = length(moving - scene); crossing = true;
                 }
             }
         }
     }
+    // A third-person game (round 25, tests/test_flow_thirdperson_truth.py):
+    // the character stands near the middle of the screen while the world
+    // streams past, and the estimate's stillness runs 10-15 pixels out into
+    // the scenery beside it - drawn there with the character's motion, the
+    // scenery smeared into it ("the head mixes with the surroundings"). An
+    // unsure pixel that is scenery itself (it changed, and it is not on or
+    // right beside the layer that stood still) takes the scenery's motion
+    // around it, and where one end of that path lies on the still layer - the
+    // character covers the scenery there - it is taken from the other end.
+    // On that world: the band round the character 18% closer to the truth at
+    // 20 FPS, 16% at 15 FPS and with the GPU estimate alone (AMD); the head and
+    // the rest unchanged, the football test neutral. The neighbourhood is
+    // read only for a pixel the rule can take (round 26: it was read for
+    // every pixel, most of them sure).
+    bool besideLayer = true;
+    if (!crossing && best.w < .5 && still >= .02 && gBoth != 0) {
+        besideLayer = false;
+        int2 last = int2(gW - 1, gH - 1);
+        [unroll] for (int y = -2; y <= 2; y += 2)
+        [unroll] for (int x = -2; x <= 2; x += 2)
+            besideLayer = besideLayer || StillOf(gHud[clamp(int2(id) + int2(x, y), int2(0, 0), last)]) >= 2;
+    }
+    if (!besideLayer) {
+        float2 s = MovingScene(uv, texel, scale);
+        if (dot(s, s) >= 4.0) {
+            float2 p = uv + gT * s * texel, c = uv - (1.0 - gT) * s * texel;
+            if (Inside(p, texel) && Inside(c, texel)) {
+                int2 last = int2(gW - 1, gH - 1);
+                bool standP = StillOf(gHud[clamp(int2(p * size), int2(0, 0), last)]) >= 2;
+                bool standC = StillOf(gHud[clamp(int2(c * size), int2(0, 0), last)]) >= 2;
+                if (standP != standC) {
+                    best = float4(standP ? gCur.SampleLevel(gLin, c, 0).rgb : gPrev.SampleLevel(gLin, p, 0).rgb, .5);
+                    bestMove = s;
+                    bestSide = standP ? 2u : 1u;
+                }
+            }
+        }
+    }
+    Choice choice;
+    choice.best = best; choice.move = bestMove; choice.side = bestSide; choice.crossing = crossing;
+    return choice;
+}
+
+// hudNear: false only where no HUD verdict is within a pixel - there Layered
+// has nothing to do and is not asked.
+float4 Finish(uint2 id, float2 uv, float2 texel, float2 scale, float4 p0, float4 c0, float still, float state,
+              float3 overlay, float layer, Choice choice, bool hudNear) {
     float3 safe = gT < .5 ? p0.rgb : c0.rgb;
+    float4 best = choice.best;
+    float2 bestMove = choice.move;
+    bool crossing = choice.crossing;
     float3 result = best.w > .1 ? best.rgb : safe;
     // A pixel that has not changed for several pairs shows what it showed -
     // the inside of a HUD panel no motion can be read from, or a flat patch
@@ -1023,12 +1320,213 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         crossing = leftP > .06 && cameC > .06;
     }
     if (!crossing && still < .008 && StillOf(state) >= 3) result = c0.rgb;
-    else if (!crossing) {
+    else if (!crossing && hudNear) {
         float3 layered;
-        uint edge = Layered(id.xy, uv, texel, Motion(uv, scale, false), p0.rgb, c0.rgb, layered);
+        uint edge = Layered(id, uv, texel, Motion(uv, scale, false), p0.rgb, c0.rgb, layered);
         // A scene surface followed with confidence beside the HUD stays.
         if (edge == 1 || (edge == 2 && best.w < .8)) result = layered;
     }
-    gDst[id.xy] = float4(saturate(lerp(result, overlay, layer)), c0.a);
+    // Alpha: how sure the pixel is - DespeckleMain reads it; the frame shown
+    // is opaque again.
+    return float4(saturate(lerp(result, overlay, layer)), crossing || layer > 0 ? 1.0 : saturate(best.w));
+}
+
+// The frame at gT, as it is shown. CSMain below writes it.
+float4 Draw(uint3 id) {
+    float4 p0 = gPrev[id.xy], c0 = gCur[id.xy];
+    if (gT >= 1) return c0;
+    if (gT <= 0) return p0;
+    float still, state;
+    float3 overlay;
+    float layer = HudLayer(id.xy, p0, c0, still, overlay, state);
+    if (layer >= 1) return float4(overlay, c0.a);
+    float2 size = float2(gW, gH), texel = 1.0 / size;
+    float2 uv = (float2(id.xy) + .5) * texel;
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    float2 scale = size / float2(mw, mh);
+    return Finish(id.xy, uv, texel, scale, p0, c0, still, state, overlay, layer, Decide(id.xy, uv, texel, scale, still), HudNearAt(id.xy));
+}
+
+// ---- FLOW VIEW ------------------------------------------------------------
+// The button beside the card's name in LIVE FLOW: how FLOW MFG sees the
+// picture, drawn over it (gPass != 0 on a show dispatch - the host sets it only
+// there; BlockMain and TrackMain read gPass for themselves, CSMain never did).
+//   motion   a colour wheel: the colour is the direction, the strength the
+//            speed (still places keep the picture)
+//   yellow   motion FLOW corrected: its own search found a better one than
+//            the estimate - a ball, a player, a HUD edge
+//   magenta  the HUD layer: fixed to the screen, drawn as it stands
+//   violet   the inside of a HUD panel held still beside it
+float3 Wheel(float2 m) {
+    float h = atan2(m.y, m.x) / 6.2831853 + .5;
+    float3 k = saturate(abs(frac(h + float3(0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0);
+    return k;
+}
+float4 View(uint2 id, float4 c) {
+    float2 size = float2(gW, gH), texel = 1.0 / size;
+    float2 uv = (float2(id) + .5) * texel;
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    float2 scale = size / float2(mw, mh);
+    // The picture in grey, so its detail stays readable under the colours.
+    float grey = dot(c.rgb, float3(.2126, .7152, .0722)) * .75 + .08;
+    float3 col = grey.xxx;
+    // Current -> previous, in output pixels per pair; drawn as the way things
+    // move (the other way round), tinting the grey rather than covering it.
+    float2 m = Motion(uv, scale, false);
+    float speed = length(m);
+    if (speed > .75) col = lerp(col, grey * Wheel(-m) * 1.9 + .06, .2 + .3 * saturate(speed / 40.0));
+    // The motion vectors themselves: an arrow every 32 pixels (at 720p), from
+    // the middle of its cell the way that place moves, as long as the motion
+    // (capped inside the cell), in the direction's colour with a bright tip.
+    float cell = 32.0 * max(1.0, gH / 720.0);
+    float2 centre = (floor(float2(id) / cell) + .5) * cell;
+    float2 cm = Motion(centre * texel, scale, false);
+    float reach = min(length(cm) * 1.5, cell * .45);
+    if (reach > 1.5) {
+        float2 dir = normalize(-cm), tip = centre + dir * reach;
+        float2 rel = float2(id) + .5 - centre;
+        float along = clamp(dot(rel, dir), 0.0, reach);
+        float away = length(rel - dir * along);
+        if (length(float2(id) + .5 - tip) < 2.6) col = float3(1, 1, 1);
+        else if (away < 1.1) col = Wheel(-cm) * .85 + .15;
+    } else if (length(float2(id) + .5 - centre) < 1.2) col = float3(.75, .75, .75);
+    float2 estimated = RawMotion(uv, scale);
+    if (length(m - estimated) > 2.0) col = lerp(col, float3(1, .88, .1), .6);
+    float state = gHud[id];
+    if (HudOf(state) >= .5) col = lerp(col, float3(1, .15, .85), .75);
+    else if (PanelAt(uv)) col = lerp(col, float3(.6, .35, 1), .55);
+    return float4(col, 1);
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= gW || id.y >= gH) return;
+    float4 shown = Draw(id);
+    gDst[id.xy] = gPass != 0 ? View(id.xy, shown) : shown;
+}
+)hlsl"
+R"hlsl(
+// ---- Performance mode (round 26) ------------------------------------------
+// As Lossless Scaling's performance mode trades a little of the picture for
+// much less of the card: per pixel only the two motions themselves - current
+// -> previous and previous -> current, each followed to both frames - and the
+// better matched is taken. A four-neighbour repair only where uncertain; no crossing search, no
+// third-person rule; the HUD, the still places and the HUD's edges are drawn
+// exactly as in the full drawing. A bounded set of samples instead of a
+// hundred (tests/flow_cost.py --fast). The speckle pass still runs after it.
+[numthreads(8, 8, 1)]
+void FastMain(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= gW || id.y >= gH) return;
+    float4 p0 = gPrev[id.xy], c0 = gCur[id.xy];
+    float still, state;
+    float3 overlay;
+    float layer = HudLayer(id.xy, p0, c0, still, overlay, state);
+    if (layer >= 1) { gDst[id.xy] = float4(overlay, c0.a); return; }
+    float2 size = float2(gW, gH), texel = 1.0 / size;
+    float2 uv = (float2(id.xy) + .5) * texel;
+    uint mw, mh; gMv.GetDimensions(mw, mh);
+    float2 scale = size / float2(mw, mh);
+    Choice choice = Resolve(uv, texel, scale, false, 1);
+    if (gBoth != 0 && choice.best.w < .9) {
+        Choice candidate = Resolve(uv, texel, scale, true, 1);
+        if (candidate.best.w > choice.best.w) choice = candidate;
+    }
+    // Coarse flow can mix two surfaces along a silhouette. A bounded repair
+    // on uncertain pixels avoids the per-pixel fallback mosaic in fast mode;
+    // already reliable pixels pay no neighbour search and stay unchanged.
+    if (choice.best.w < .65) {
+        const float2 offsets[4] = {float2(-4,0),float2(4,0),float2(0,-4),float2(0,4)};
+        [loop] for (int k = 0; k < 4; ++k) {
+            float2 m = Motion(uv + offsets[k] * texel * scale, scale, false);
+            uint side;
+            float4 candidate = FollowSide(uv, texel, scale, m, true, side);
+            if (candidate.w > choice.best.w + .05) {
+                choice.best = candidate; choice.move = m; choice.side = side;
+            }
+        }
+    }
+    gDst[id.xy] = Finish(id.xy, uv, texel, scale, p0, c0, still, state, overlay, layer, choice, HudNearAt(id.xy));
+}
+)hlsl"
+R"hlsl(
+// ---- After every frame in between: the speckle out -------------------------
+// Where the frame drawn was unsure of a pixel, and that pixel stands alone -
+// far from the middle colour of the nine around it, with at most one of its
+// own colour beside it - it takes that middle colour. At a low frame rate a
+// fast object's edges and a moving name tag broke up into such pixels, one
+// frame this way, the next that way: the crawl around them. Pixels drawn with
+// confidence (a ball found crossing, the HUD) and anything on or next to a HUD
+// verdict are left alone: a radar's dots are exactly such lone pixels. On the
+// football truth test: speckle -20 to -25%, the players and the name tag
+// closer, the HUD unchanged.
+void Sort2(inout float a, inout float b) { float lo = min(a, b); b = max(a, b); a = lo; }
+float Middle9(float p[9]) {
+    Sort2(p[1], p[2]); Sort2(p[4], p[5]); Sort2(p[7], p[8]); Sort2(p[0], p[1]); Sort2(p[3], p[4]);
+    Sort2(p[6], p[7]); Sort2(p[1], p[2]); Sort2(p[4], p[5]); Sort2(p[7], p[8]); Sort2(p[0], p[3]);
+    Sort2(p[5], p[8]); Sort2(p[4], p[7]); Sort2(p[3], p[6]); Sort2(p[1], p[4]); Sort2(p[2], p[5]);
+    Sort2(p[4], p[7]); Sort2(p[4], p[2]); Sort2(p[6], p[4]); Sort2(p[4], p[2]);
+    return p[4];
+}
+// Below about 20 real frames a second (round 24) the frames in between carry
+// most of what is shown - three of four at 15 FPS x4 - and where objects cross
+// each other their outlines break up: pieces of one player scattered round
+// another, a second faint ball, a torn edge, different in every frame. There,
+// and only there, the pixels that are such fragments settle: an unsure pixel
+// on an edge that disagrees with its own neighbourhood (few alike around it,
+// far from their middle) moves towards the middle of the nine. A middle keeps
+// a straight edge where it is; an outline the neighbours agree on, a sure
+// pixel, a flat area, anything by the HUD and every frame from 20 FPS up are
+// left exactly as drawn. On the football truth test at 10 FPS: speckle -15%,
+// the players, the name tag and the edges closer, the HUD and the pitch
+// unchanged (the same-side average tried first moved nothing measurable). The
+// host puts the strength in gAccum for this dispatch alone: 0 from 20 FPS up,
+// rising to 1 at 12 FPS and below.
+static const float3 kDespeckleLuma = float3(.2126, .7152, .0722);
+[numthreads(8, 8, 1)]
+void DespeckleMain(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= gW || id.y >= gH) return;
+    float4 c = gDrawn[id.xy];
+    int2 limit = int2(gW - 1, gH - 1);
+    const float lowFps = saturate(gAccum);
+    bool byHud = false;
+    if (c.a < .75 || (lowFps > 0 && c.a < .9)) {
+        [unroll] for (int y = -2; y <= 2; y += 2)
+        [unroll] for (int x = -2; x <= 2; x += 2) {
+            float state = gHud[clamp(int2(id.xy) + int2(x, y), int2(0, 0), limit)];
+            byHud = byHud || HudOf(state) >= .5 || NearOf(state);
+        }
+    }
+    bool touch = c.a < .75 && !byHud;
+    if (touch) {
+        float r[9], g[9], b[9];
+        uint alike = 0;
+        [unroll] for (int k = 0; k < 9; ++k) {
+            float3 n = gDrawn[clamp(int2(id.xy) + int2(k % 3 - 1, k / 3 - 1), int2(0, 0), limit)].rgb;
+            r[k] = n.r; g[k] = n.g; b[k] = n.b;
+            if (k != 4 && Max3(abs(n - c.rgb)) < 20.0 / 255.0) ++alike;
+        }
+        float3 middle = float3(Middle9(r), Middle9(g), Middle9(b));
+        if (Max3(abs(c.rgb - middle)) > 40.0 / 255.0 && alike <= 1) c.rgb = middle;
+    }
+    if (lowFps > 0 && c.a < .9 && !byHud) {
+        float r[9], g[9], b[9];
+        float lo = 1e9, hi = -1e9;
+        uint alike = 0;
+        [unroll] for (int k = 0; k < 9; ++k) {
+            float3 n = gDrawn[clamp(int2(id.xy) + int2(k % 3 - 1, k / 3 - 1), int2(0, 0), limit)].rgb;
+            r[k] = n.r; g[k] = n.g; b[k] = n.b;
+            float l = dot(n, kDespeckleLuma);
+            lo = min(lo, l); hi = max(hi, l);
+            if (k != 4 && Max3(abs(n - c.rgb)) < 20.0 / 255.0) ++alike;
+        }
+        float3 middle = float3(Middle9(r), Middle9(g), Middle9(b));
+        // Only on an edge (a flat area has nothing to settle), only a pixel
+        // its neighbourhood disagrees with, and more the less sure it was.
+        float edge = saturate((hi - lo - .05) / .1);
+        float fragment = (alike <= 3 ? 1.0 : 0.0) * saturate((Max3(abs(c.rgb - middle)) - 12.0 / 255.0) / (24.0 / 255.0));
+        float amount = lowFps * edge * fragment * saturate((.9 - c.a) / .4);
+        c.rgb = lerp(c.rgb, middle, amount);
+    }
+    gFinal[id.xy] = float4(c.rgb, 1);
 }
 )hlsl";
